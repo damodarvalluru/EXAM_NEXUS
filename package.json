@@ -1,0 +1,26 @@
+{
+  "name": "examnexus",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Enterprise multi-tenant examination hosting and management platform",
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=20.19.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "predev": "pnpm --filter @examnexus/shared build",
+    "dev": "pnpm --parallel --filter @examnexus/api --filter @examnexus/web dev",
+    "prebuild": "pnpm --filter @examnexus/shared build",
+    "build": "pnpm --filter @examnexus/api build && pnpm --filter @examnexus/web build",
+    "test": "pnpm --filter @examnexus/shared test && pnpm --filter @examnexus/api test && pnpm --filter @examnexus/web test",
+    "lint": "pnpm --filter @examnexus/api lint && pnpm --filter @examnexus/web lint",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md,yml,yaml}\"",
+    "prisma:generate": "pnpm --filter @examnexus/api prisma:generate",
+    "prisma:migrate:dev": "pnpm --filter @examnexus/api prisma:migrate:dev"
+  },
+  "devDependencies": {
+    "prettier": "3.10.1",
+    "typescript": "5.9.3"
+  }
+}
