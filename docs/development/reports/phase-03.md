@@ -4,6 +4,51 @@
 **Status:** Code complete and verified by build, lint and unit tests. Database/Redis/storage-dependent
 flows were not executed locally because Docker/Postgres/Redis are unavailable in this environment.
 
+## TiDB Cloud migration note (2026-11-22)
+
+The sections below are the historical Phase 3 record as written on 2026-11-21. On 2026-11-22 the
+database moved from local PostgreSQL to TiDB Cloud Serverless (MySQL-compatible, TLS required).
+Claims that PostgreSQL RLS policies were the database-level enforcement layer are no longer true:
+tenant isolation is now application-level scoping in `PrismaService` (implementation being finalised
+separately), with the old RLS SQL archived under `apps/api/prisma/legacy-postgres/`. Database-backed
+and cross-tenant isolation tests against the new cluster remain pending; see the current
+[getting-started guide](../getting-started.md) and
+[setup guide](../setup-installation-guide.md).
+
+**2026-11-22 Phase 4 verification update:** live tenant-isolation tests against the TiDB Cloud
+cluster now pass (4/4 with `RUN_DB_TESTS=1`), and the compound-unique ownership check bug they
+exposed in `tenant-scope.ts` was fixed. Redis-dependent and browser E2E flows remain unverified.
+
+## Final integration verification (2026-11-22)
+
+This section supersedes the pending live-database statements in the historical record above.
+
+- `/organisations/me/profile` returns the `OrganisationView`; `GET /organisations/me` remains a
+  backwards-compatible dashboard alias and `PATCH /organisations/me` is the profile update route.
+  Duplicate-email registration now returns 409, membership checks are enforced, and a document-type
+  whitelist plus path-traversal fix were verified.
+- Legacy slash-form verification document keys are now supported through a narrow whitelist
+  (`REGISTRATION`, `ID_PROOF`, `ADDRESS_PROOF`, `ADDITIONAL`, `verification`) mapping `<prefix>/<uuid>`
+  to the historical `<prefix>_<uuid>` on-disk name. Unknown prefixes, traversal, absolute/drive/UNC
+  paths, null bytes, backslashes and nested keys are still rejected; **21 focused org-document
+  tests pass**.
+- Targeted organisation tenant-scope tests passed **9/9**; the full opt-in live DB suite with Redis
+  running passed 16 suites / 103 tests
+  (`RUN_DB_TESTS=1 pnpm --filter @examnexus/api test -- --runInBand`). Redis is up
+  (`docker exec examnexus-redis redis-cli ping` → `PONG`); Docker was restarted again after it
+  stopped during the final worker run. Combined fix tests passed (5 suites / 50 tests, covering
+  rate-limit, admin, organisations and auth security).
+- Final checks passed: `pnpm lint`, `pnpm test` (API 14 suites passed / 2 skipped, 93 tests passed /
+  10 skipped; web 2 tests passed), `pnpm build` and
+  `pnpm --filter @examnexus/api exec prisma validate`. Applied migrations:
+  `20261122000000_init`, `20261122120000_admin_integration_support`,
+  `20261122130000_exam_integrity`; `prisma migrate status` → "Database schema is up to date!".
+- The API boots successfully and `/health/ready` returns 200 with database up (609 ms), redis up
+  (1 ms) and storage up; `/api/v1/modules` lists phases 1–6 implemented.
+- Residual/not claimed: browser E2E flows, S3 object-storage adapter, real third-party outbound
+  calls, production alerting/on-call/SLA and paid-billing provider actions. Legacy slash-form
+  document key compatibility is closed as described above.
+
 ## Features completed
 
 - Public organisation registration with administrator creation, slug/email/duplicate checks,

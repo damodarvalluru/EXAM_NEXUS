@@ -24,8 +24,8 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter @examnexus/api prisma:generate
         env:
-          DATABASE_URL: postgresql://user:pass@localhost:5432/db
-          DIRECT_URL: postgresql://user:pass@localhost:5432/db
+          DATABASE_URL: mysql://user:pass@localhost:3306/examnexus?sslaccept=strict
+          DIRECT_URL: mysql://user:pass@localhost:3306/examnexus?sslaccept=strict
       - name: Lint
         run: pnpm lint
       - name: Unit tests

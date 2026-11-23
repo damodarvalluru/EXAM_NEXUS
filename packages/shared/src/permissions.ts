@@ -13,6 +13,13 @@ export const PERMISSIONS = {
   PLATFORM_AUDIT_READ: 'platform.audit.read',
   PLATFORM_AUTH_EVENTS_READ: 'platform.auth_events.read',
   PLATFORM_SECURITY_MANAGE: 'platform.security.manage',
+  PLATFORM_SECURITY_READ: 'platform.security.read',
+  PLATFORM_MONITORING_READ: 'platform.monitoring.read',
+  PLATFORM_REPORTS_READ: 'platform.reports.read',
+  PLATFORM_INTEGRATIONS_READ: 'platform.integrations.read',
+  PLATFORM_INTEGRATIONS_MANAGE: 'platform.integrations.manage',
+  PLATFORM_CONFIGURATION_MANAGE: 'platform.configuration.manage',
+  PLATFORM_SUPPORT_MANAGE: 'platform.support.manage',
   ORG_DASHBOARD_READ: 'org.dashboard.read',
   ORG_PROFILE_MANAGE: 'org.profile.manage',
   ORG_USERS_READ: 'org.users.read',
@@ -27,6 +34,9 @@ export const PERMISSIONS = {
   ORG_QUESTION_BANK_MANAGE: 'org.question_bank.manage',
   ORG_EVALUATION_READ: 'org.evaluation.read',
   ORG_LIVE_MONITORING: 'org.live_monitoring',
+  ORG_INTEGRATIONS_READ: 'org.integrations.read',
+  ORG_INTEGRATIONS_MANAGE: 'org.integrations.manage',
+  ORG_API_MANAGE: 'org.api.manage',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -46,6 +56,13 @@ export const PERMISSION_CATALOGUE: ReadonlyArray<{
   { key: PERMISSIONS.PLATFORM_AUDIT_READ, description: 'Search the tamper-resistant audit trail', category: 'platform' },
   { key: PERMISSIONS.PLATFORM_AUTH_EVENTS_READ, description: 'Search authentication events', category: 'platform' },
   { key: PERMISSIONS.PLATFORM_SECURITY_MANAGE, description: 'Manage platform security controls', category: 'platform' },
+  { key: PERMISSIONS.PLATFORM_SECURITY_READ, description: 'View security alerts, incidents and risk events', category: 'platform' },
+  { key: PERMISSIONS.PLATFORM_MONITORING_READ, description: 'View platform health, queues and live examination monitoring', category: 'platform' },
+  { key: PERMISSIONS.PLATFORM_REPORTS_READ, description: 'View and export cross-tenant reports and analytics', category: 'platform' },
+  { key: PERMISSIONS.PLATFORM_INTEGRATIONS_READ, description: 'View integration health across all organisations', category: 'platform' },
+  { key: PERMISSIONS.PLATFORM_INTEGRATIONS_MANAGE, description: 'Manage platform integration policies', category: 'platform' },
+  { key: PERMISSIONS.PLATFORM_CONFIGURATION_MANAGE, description: 'Update platform configuration settings', category: 'platform' },
+  { key: PERMISSIONS.PLATFORM_SUPPORT_MANAGE, description: 'Manage support and complaint tickets', category: 'platform' },
   { key: PERMISSIONS.ORG_DASHBOARD_READ, description: 'View the organisation dashboard', category: 'organisation' },
   { key: PERMISSIONS.ORG_PROFILE_MANAGE, description: 'Update organisation profile and branding', category: 'organisation' },
   { key: PERMISSIONS.ORG_USERS_READ, description: 'View organisation users', category: 'organisation' },
@@ -60,6 +77,9 @@ export const PERMISSION_CATALOGUE: ReadonlyArray<{
   { key: PERMISSIONS.ORG_QUESTION_BANK_MANAGE, description: 'Manage question banks', category: 'organisation' },
   { key: PERMISSIONS.ORG_EVALUATION_READ, description: 'View evaluation work queues', category: 'organisation' },
   { key: PERMISSIONS.ORG_LIVE_MONITORING, description: 'Monitor live examinations', category: 'organisation' },
+  { key: PERMISSIONS.ORG_INTEGRATIONS_READ, description: 'View organisation integrations and their health', category: 'organisation' },
+  { key: PERMISSIONS.ORG_INTEGRATIONS_MANAGE, description: 'Configure, connect, rotate and revoke integrations', category: 'organisation' },
+  { key: PERMISSIONS.ORG_API_MANAGE, description: 'Create and revoke organisation API clients and keys', category: 'organisation' },
 ];
 
 /** Default tenant roles created for every verified organisation. */
@@ -79,6 +99,9 @@ export const TENANT_ROLE_PERMISSIONS: Readonly<Record<string, readonly Permissio
     PERMISSIONS.ORG_QUESTION_BANK_MANAGE,
     PERMISSIONS.ORG_EVALUATION_READ,
     PERMISSIONS.ORG_LIVE_MONITORING,
+    PERMISSIONS.ORG_INTEGRATIONS_READ,
+    PERMISSIONS.ORG_INTEGRATIONS_MANAGE,
+    PERMISSIONS.ORG_API_MANAGE,
   ],
   EXAM_ADMIN: [
     PERMISSIONS.ORG_DASHBOARD_READ,

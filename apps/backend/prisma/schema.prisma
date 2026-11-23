@@ -1,0 +1,1382 @@
+// ExamNexus relational schema.
+// Every tenant-scoped model carries tenant_id so PostgreSQL RLS can filter it.
+// Enum values must stay in sync with packages/shared/src/enums.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "mysql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum OrganisationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  VERIFICATION_REQUIRED
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  LOCKED
+}
+
+enum GlobalRole {
+  SUPER_ADMIN
+  PLATFORM_STAFF
+  AUDITOR
+}
+
+enum AuthMethod {
+  PASSWORD
+  PIN
+  TOTP
+  WEBAUTHN
+  SSO_OIDC
+  SSO_SAML
+  API_KEY
+}
+
+enum MfaType {
+  TOTP
+  WEBAUTHN
+  SMS
+  EMAIL
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+  DENIED
+  ERROR
+}
+
+enum ExamStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+  ARCHIVED
+}
+
+enum ExamType {
+  SCHEDULED
+  IMMEDIATE
+  PRACTICE
+  LIVE_ASSESSMENT
+  REMOTE
+  IN_PERSON
+  HYBRID
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  FILL_BLANK
+  SHORT_ANSWER
+  LONG_ANSWER
+  ESSAY
+  CODING
+  SQL
+  IMAGE_BASED
+  AUDIO_BASED
+  VIDEO_BASED
+  MATHEMATICAL
+  FILE_UPLOAD
+  MATCHING
+  ORDERING
+  PRACTICAL
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum AttemptStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  SUBMITTED
+  AUTO_SUBMITTED
+  TERMINATED
+  CANCELLED
+}
+
+enum EvaluationMode {
+  AUTOMATIC
+  MANUAL
+  HYBRID
+  RUBRIC
+}
+
+enum EvaluationStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  REVISION
+}
+
+enum ResultStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  PUBLISHED
+  REVISION
+  WITHHELD
+}
+
+enum IntegrationStatus {
+  NOT_CONNECTED
+  CONFIGURATION_PENDING
+  AUTHENTICATION_PENDING
+  VERIFICATION_PENDING
+  CONNECTED
+  SYNC_ACTIVE
+  WARNING
+  FAILED
+  SUSPENDED
+  REVOKED
+}
+
+enum IntegrationAuthType {
+  API_KEY
+  OAUTH2
+  OIDC
+  SAML
+  WEBHOOK
+  BASIC
+  MTLS
+  SCIM
+}
+
+enum AlertSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  INVESTIGATING
+  CONTAINED
+  RESOLVED
+  CLOSED
+  FALSE_POSITIVE
+}
+
+enum SecurityProfile {
+  STANDARD_BROWSER
+  ENHANCED_MONITORING
+  SECURE_EXAM_BROWSER
+  ANDROID_KIOSK
+  APPLE_ASSESSMENT
+  MANAGED_DEVICE
+}
+
+enum RiskLevel {
+  NORMAL
+  LOW
+  MODERATE
+  HIGH
+  CRITICAL
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  IN_APP
+  WEBHOOK
+  PUSH
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum HealthStatus {
+  HEALTHY
+  DEGRADED
+  DOWN
+  UNKNOWN
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy, identity and access
+// ---------------------------------------------------------------------------
+
+model Organisation {
+  id                      String             @id @default(uuid()) @db.VarChar(36)
+  name                    String             @db.VarChar(255)
+  slug                    String             @unique @db.VarChar(120)
+  registrationNumber      String?            @unique @db.VarChar(120)
+  officialEmail           String             @db.VarChar(320)
+  contactPhone            String?            @db.VarChar(32)
+  website                 String?            @db.VarChar(500)
+  logoKey                 String?            @db.VarChar(512)
+  primaryColour           String?            @db.VarChar(16)
+  address                 Json?
+  status                  OrganisationStatus @default(DRAFT)
+  verificationSubmittedAt DateTime?
+  approvedAt              DateTime?
+  suspendedAt             DateTime?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  deletedAt               DateTime?
+
+  verifications       OrganisationVerification[]
+  memberships         OrganisationMembership[]
+  departments         Department[]
+  branches            Branch[]
+  roles               Role[]
+  candidates          Candidate[]
+  examinations        Examination[]
+  questionBanks       QuestionBank[]
+  questionSets        QuestionSet[]
+  integrations        Integration[]
+  apiClients          ApiClient[]
+  webhookEndpoints    WebhookEndpoint[]
+  auditLogs           AuditLog[]
+  securityAlerts      SecurityAlert[]
+  securityIncidents   SecurityIncident[]
+  subscriptions       Subscription[]
+  payments            Payment[]
+  notifications       Notification[]
+  fileObjects         FileObject[]
+  deviceRegistrations DeviceRegistration[]
+  supportTickets      SupportTicket[]
+
+  @@index([status, createdAt])
+  @@map("organisations")
+}
+
+model OrganisationVerification {
+  id           String       @id @default(uuid()) @db.VarChar(36)
+  tenantId     String       @db.VarChar(36)
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stage        String       @db.VarChar(80)
+  status       String       @db.VarChar(40)
+  documentKeys Json?
+  notes        String?      @db.Text
+  reviewerId   String?      @db.VarChar(36)
+  reviewedAt   DateTime?
+  createdAt    DateTime     @default(now())
+
+  @@index([tenantId, createdAt])
+  @@map("organisation_verifications")
+}
+
+model User {
+  id                String      @id @default(uuid()) @db.VarChar(36)
+  tenantId          String?     @db.VarChar(36)
+  email             String      @unique @db.VarChar(320)
+  username          String?     @unique @db.VarChar(120)
+  passwordHash      String?     @db.Text
+  globalRole        GlobalRole?
+  status            UserStatus  @default(PENDING_VERIFICATION)
+  emailVerifiedAt   DateTime?
+  phoneVerifiedAt   DateTime?
+  failedLoginCount  Int         @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  lastLoginIp       String?     @db.VarChar(64)
+  passwordChangedAt DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  deletedAt         DateTime?
+
+  profile            UserProfile?
+  memberships        OrganisationMembership[]
+  assignedRoles      UserRole[]
+  sessions           UserSession[]
+  authEvents         AuthenticationEvent[]
+  mfaMethods         MfaMethod[]
+  recoveryCodes      RecoveryCode[]
+  superAdminPin      SuperAdminCredential?
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+  createdRoles       Role[]                   @relation("RoleCreatedBy")
+  createdExams       Examination[]            @relation("ExamCreatedBy")
+  createdQuestions   Question[]               @relation("QuestionCreatedBy")
+  evaluations        Evaluation[]
+  apiClients         ApiClient[]
+  grantedPermissions IntegrationPermission[]
+
+  @@index([status])
+  @@index([globalRole])
+  @@map("users")
+}
+
+model UserProfile {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  tenantId    String?  @db.VarChar(36)
+  userId      String   @unique @db.VarChar(36)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName   String?  @db.VarChar(120)
+  lastName    String?  @db.VarChar(120)
+  phone       String?  @db.VarChar(32)
+  avatarKey   String?  @db.VarChar(512)
+  locale      String   @default("en") @db.VarChar(16)
+  timezone    String   @default("UTC") @db.VarChar(64)
+  preferences Json?
+  updatedAt   DateTime @updatedAt
+
+  @@map("user_profiles")
+}
+
+model OrganisationMembership {
+  id           String       @id @default(uuid()) @db.VarChar(36)
+  tenantId     String       @db.VarChar(36)
+  userId       String       @db.VarChar(36)
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isPrimary    Boolean      @default(false)
+  status       String       @default("ACTIVE") @db.VarChar(40)
+  invitedBy    String?      @db.VarChar(36)
+  joinedAt     DateTime?
+  createdAt    DateTime     @default(now())
+
+  @@unique([tenantId, userId])
+  @@index([userId, status])
+  @@map("organisation_memberships")
+}
+
+model Role {
+  id           String       @id @default(uuid()) @db.VarChar(36)
+  tenantId     String       @db.VarChar(36)
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String       @db.VarChar(120)
+  description  String?      @db.Text
+  isSystem     Boolean      @default(false)
+  createdBy    String?      @db.VarChar(36)
+  creator      User?        @relation("RoleCreatedBy", fields: [createdBy], references: [id])
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@unique([tenantId, name])
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  key         String   @unique @db.VarChar(160)
+  description String?  @db.Text
+  category    String?  @db.VarChar(80)
+  createdAt   DateTime @default(now())
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid()) @db.VarChar(36)
+  tenantId     String     @db.VarChar(36)
+  roleId       String     @db.VarChar(36)
+  permissionId String     @db.VarChar(36)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([tenantId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  tenantId  String   @db.VarChar(36)
+  userId    String   @db.VarChar(36)
+  roleId    String   @db.VarChar(36)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  grantedAt DateTime @default(now())
+
+  @@unique([tenantId, userId, roleId])
+  @@map("user_roles")
+}
+
+model UserSession {
+  id          String     @id @default(uuid()) @db.VarChar(36)
+  tenantId    String?    @db.VarChar(36)
+  userId      String     @db.VarChar(36)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshHash String     @db.Text
+  familyId    String     @db.VarChar(36)
+  authMethod  AuthMethod
+  ip          String?    @db.VarChar(64)
+  userAgent   String?    @db.Text
+  deviceLabel String?    @db.VarChar(200)
+  expiresAt   DateTime
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  @@map("user_sessions")
+}
+
+model AuthenticationEvent {
+  id        String       @id @default(uuid()) @db.VarChar(36)
+  tenantId  String?      @db.VarChar(36)
+  userId    String?      @db.VarChar(36)
+  user      User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email     String?      @db.VarChar(320)
+  method    AuthMethod
+  outcome   AuditOutcome
+  ip        String?      @db.VarChar(64)
+  userAgent String?      @db.Text
+  location  String?      @db.VarChar(200)
+  riskScore Int?
+  metadata  Json?
+  createdAt DateTime     @default(now())
+
+  @@index([userId, createdAt])
+  @@index([email, createdAt])
+  @@index([outcome, createdAt])
+  @@map("authentication_events")
+}
+
+model MfaMethod {
+  id              String    @id @default(uuid()) @db.VarChar(36)
+  tenantId        String?   @db.VarChar(36)
+  userId          String    @db.VarChar(36)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            MfaType
+  label           String?   @db.VarChar(120)
+  secretEncrypted String?   @db.Text
+  credentialId    String?   @db.VarChar(255)
+  publicKey       String?   @db.Text
+  verifiedAt      DateTime?
+  enabled         Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+
+  @@index([userId, enabled])
+  @@map("mfa_methods")
+}
+
+model RecoveryCode {
+  id        String    @id @default(uuid()) @db.VarChar(36)
+  tenantId  String?   @db.VarChar(36)
+  userId    String    @db.VarChar(36)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String    @db.Text
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("recovery_codes")
+}
+
+model SuperAdminCredential {
+  id               String    @id @default(uuid()) @db.VarChar(36)
+  userId           String    @unique @db.VarChar(36)
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pinHash          String    @db.Text
+  pinUpdatedAt     DateTime  @default(now())
+  rotationRequired Boolean   @default(false)
+  failedAttempts   Int       @default(0)
+  lockedUntil      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@map("super_admin_credentials")
+}
+
+model Department {
+  id           String       @id @default(uuid()) @db.VarChar(36)
+  tenantId     String       @db.VarChar(36)
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String       @db.VarChar(200)
+  code         String?      @db.VarChar(40)
+  parentId     String?      @db.VarChar(36)
+  parent       Department?  @relation("DepartmentTree", fields: [parentId], references: [id])
+  children     Department[] @relation("DepartmentTree")
+  headUserId   String?      @db.VarChar(36)
+  createdAt    DateTime     @default(now())
+
+  @@unique([tenantId, code])
+  @@index([tenantId, parentId])
+  @@map("departments")
+}
+
+model Branch {
+  id           String       @id @default(uuid()) @db.VarChar(36)
+  tenantId     String       @db.VarChar(36)
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String       @db.VarChar(200)
+  code         String?      @db.VarChar(40)
+  address      Json?
+  createdAt    DateTime     @default(now())
+
+  @@unique([tenantId, code])
+  @@map("branches")
+}
+
+// ---------------------------------------------------------------------------
+// Examinations and questions
+// ---------------------------------------------------------------------------
+
+model Examination {
+  id                 String       @id @default(uuid()) @db.VarChar(36)
+  tenantId           String       @db.VarChar(36)
+  organisation       Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  version            Int          @default(1)
+  title              String       @db.VarChar(300)
+  description        String?      @db.Text
+  category           String?      @db.VarChar(120)
+  type               ExamType     @default(SCHEDULED)
+  status             ExamStatus   @default(DRAFT)
+  instructions       String?      @db.Text
+  durationMinutes    Int
+  startsAt           DateTime?
+  endsAt             DateTime?
+  timezone           String       @default("UTC") @db.VarChar(64)
+  maxAttempts        Int          @default(1)
+  passingMarks       Float?
+  totalMarks         Float
+  negativeMarking    Float        @default(0)
+  randomiseQuestions Boolean      @default(false)
+  randomiseOptions   Boolean      @default(false)
+  createdBy          String?      @db.VarChar(36)
+  creator            User?        @relation("ExamCreatedBy", fields: [createdBy], references: [id])
+  publishedAt        DateTime?
+  archivedAt         DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  versions       ExaminationVersion[]
+  sections       ExaminationSection[]
+  candidateExams CandidateExamination[]
+  attempts       ExaminationAttempt[]
+  results        Result[]
+  securityPolicy ExaminationSecurityPolicy?
+
+  @@index([tenantId, status, startsAt])
+  @@index([tenantId, createdAt])
+  @@map("examinations")
+}
+
+model ExaminationVersion {
+  id            String      @id @default(uuid()) @db.VarChar(36)
+  tenantId      String      @db.VarChar(36)
+  examinationId String      @db.VarChar(36)
+  examination   Examination @relation(fields: [examinationId], references: [id], onDelete: Cascade)
+  version       Int
+  snapshot      Json
+  immutableHash String      @db.VarChar(128)
+  /// Hash of the frozen question data inside `snapshot`; legacy rows use a `legacy:` prefix.
+  contentHash   String?     @db.VarChar(128)
+  publishedAt   DateTime?
+  createdAt     DateTime    @default(now())
+
+  attempts ExaminationAttempt[]
+
+  @@unique([examinationId, version])
+  @@map("examination_versions")
+}
+
+model ExaminationSection {
+  id                 String      @id @default(uuid()) @db.VarChar(36)
+  tenantId           String      @db.VarChar(36)
+  examinationId      String      @db.VarChar(36)
+  examination        Examination @relation(fields: [examinationId], references: [id], onDelete: Cascade)
+  name               String      @db.VarChar(200)
+  description        String?     @db.Text
+  position           Int         @default(0)
+  marks              Float
+  questionCount      Int?
+  passingMarks       Float?
+  durationMinutes    Int?
+  randomiseQuestions Boolean     @default(false)
+
+  questions Question[]
+
+  @@index([examinationId, position])
+  @@map("examination_sections")
+}
+
+model ExaminationSecurityPolicy {
+  id                      String          @id @default(uuid()) @db.VarChar(36)
+  tenantId                String          @db.VarChar(36)
+  examinationId           String          @unique @db.VarChar(36)
+  examination             Examination     @relation(fields: [examinationId], references: [id], onDelete: Cascade)
+  profile                 SecurityProfile @default(STANDARD_BROWSER)
+  permittedBrowsers       Json?
+  requiredClientVersions  Json?
+  deviceRequirements      Json?
+  screenCapturePolicy     String          @default("ALLOW") @db.VarChar(40)
+  cameraPolicy            String          @default("OPTIONAL") @db.VarChar(40)
+  permittedUrls           Json?
+  applicationRestrictions Json?
+  disconnectionPolicy     String          @default("ALLOW_RECONNECT") @db.VarChar(60)
+  reconnectionLimit       Int             @default(3)
+  riskThresholds          Json?
+  requireFullscreen       Boolean         @default(false)
+  tabSwitchEvents         Boolean         @default(true)
+  updatedAt               DateTime        @updatedAt
+
+  @@map("examination_security_policies")
+}
+
+model QuestionBank {
+  id           String       @id @default(uuid()) @db.VarChar(36)
+  tenantId     String       @db.VarChar(36)
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String       @db.VarChar(200)
+  description  String?      @db.Text
+  category     String?      @db.VarChar(120)
+  createdBy    String?      @db.VarChar(36)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  questions Question[]
+
+  @@index([tenantId, category])
+  @@map("question_banks")
+}
+
+model Question {
+  id             String              @id @default(uuid()) @db.VarChar(36)
+  tenantId       String              @db.VarChar(36)
+  bankId         String?             @db.VarChar(36)
+  bank           QuestionBank?       @relation(fields: [bankId], references: [id], onDelete: SetNull)
+  sectionId      String?             @db.VarChar(36)
+  section        ExaminationSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  type           QuestionType
+  difficulty     Difficulty          @default(MEDIUM)
+  prompt         String              @db.Text
+  explanation    String?             @db.Text
+  marks          Float               @default(1)
+  negativeMarks  Float               @default(0)
+  tags           Json?
+  metadata       Json?
+  attachmentKeys Json?
+  version        Int                 @default(1)
+  isActive       Boolean             @default(true)
+  createdBy      String?             @db.VarChar(36)
+  creator        User?               @relation("QuestionCreatedBy", fields: [createdBy], references: [id])
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  options  QuestionOption[]
+  setItems QuestionSetItem[]
+  answers  CandidateAnswer[]
+
+  @@index([tenantId, type, difficulty])
+  @@index([bankId])
+  @@index([sectionId])
+  @@map("questions")
+}
+
+model QuestionOption {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  tenantId   String   @db.VarChar(36)
+  questionId String   @db.VarChar(36)
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  label      String   @db.VarChar(20)
+  content    String   @db.Text
+  isCorrect  Boolean  @default(false)
+  position   Int      @default(0)
+  metadata   Json?
+
+  @@index([questionId, position])
+  @@map("question_options")
+}
+
+model QuestionSet {
+  id           String       @id @default(uuid()) @db.VarChar(36)
+  tenantId     String       @db.VarChar(36)
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String       @db.VarChar(200)
+  description  String?      @db.Text
+  createdBy    String?      @db.VarChar(36)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  items QuestionSetItem[]
+
+  @@index([tenantId])
+  @@map("question_sets")
+}
+
+model QuestionSetItem {
+  id         String      @id @default(uuid()) @db.VarChar(36)
+  tenantId   String      @db.VarChar(36)
+  setId      String      @db.VarChar(36)
+  questionId String      @db.VarChar(36)
+  set        QuestionSet @relation(fields: [setId], references: [id], onDelete: Cascade)
+  question   Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  position   Int         @default(0)
+
+  @@unique([setId, questionId])
+  @@map("question_set_items")
+}
+
+// ---------------------------------------------------------------------------
+// Candidates, attempts and results
+// ---------------------------------------------------------------------------
+
+model Candidate {
+  id            String       @id @default(uuid()) @db.VarChar(36)
+  tenantId      String       @db.VarChar(36)
+  organisation  Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId        String?      @db.VarChar(36)
+  candidateCode String       @db.VarChar(80)
+  firstName     String       @db.VarChar(120)
+  lastName      String       @db.VarChar(120)
+  email         String       @db.VarChar(320)
+  phone         String?      @db.VarChar(32)
+  departmentId  String?      @db.VarChar(36)
+  branchId      String?      @db.VarChar(36)
+  status        String       @default("ACTIVE") @db.VarChar(40)
+  verifiedAt    DateTime?
+  photoIdKey    String?      @db.VarChar(512)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  exams         CandidateExamination[]
+  attempts      ExaminationAttempt[]
+  results       Result[]
+  devices       DeviceRegistration[]
+  notifications Notification[]
+
+  @@unique([tenantId, candidateCode])
+  @@unique([tenantId, email])
+  @@index([tenantId, status])
+  @@map("candidates")
+}
+
+model CandidateExamination {
+  id            String      @id @default(uuid()) @db.VarChar(36)
+  tenantId      String      @db.VarChar(36)
+  candidateId   String      @db.VarChar(36)
+  examinationId String      @db.VarChar(36)
+  candidate     Candidate   @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  examination   Examination @relation(fields: [examinationId], references: [id], onDelete: Cascade)
+  eligible      Boolean     @default(false)
+  eligibleAt    DateTime?
+  windowStartAt DateTime?
+  windowEndAt   DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@unique([candidateId, examinationId])
+  @@index([tenantId, eligible])
+  @@map("candidate_examinations")
+}
+
+model ExaminationAttempt {
+  id            String        @id @default(uuid()) @db.VarChar(36)
+  tenantId      String        @db.VarChar(36)
+  candidateId   String        @db.VarChar(36)
+  examinationId String        @db.VarChar(36)
+  /// Published version this attempt is bound to. Delivery and grading must use this version only.
+  versionId     String?       @db.VarChar(36)
+  candidate     Candidate     @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  examination   Examination   @relation(fields: [examinationId], references: [id], onDelete: Cascade)
+  version       ExaminationVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)
+  attemptNumber Int           @default(1)
+  status        AttemptStatus @default(NOT_STARTED)
+  startedAt     DateTime?
+  serverEndAt   DateTime?
+  submittedAt   DateTime?
+  score         Float?
+  riskScore     Int           @default(0)
+  metadata      Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  answers         CandidateAnswer[]
+  submission      Submission?
+  evaluations     Evaluation[]
+  results         Result[]
+  securityEvents  ExaminationSecurityEvent[]
+  riskAssessments RiskAssessment[]
+  session         ExamSession?
+
+  @@unique([candidateId, examinationId, attemptNumber])
+  @@index([tenantId, status, createdAt])
+  @@index([versionId])
+  @@map("examination_attempts")
+}
+
+model CandidateAnswer {
+  id             String             @id @default(uuid()) @db.VarChar(36)
+  tenantId       String             @db.VarChar(36)
+  attemptId      String             @db.VarChar(36)
+  questionId     String             @db.VarChar(36)
+  attempt        ExaminationAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question       Question           @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answer         Json
+  marksAwarded   Float?
+  isCorrect      Boolean?
+  idempotencyKey String             @db.VarChar(80)
+  savedAt        DateTime           @default(now())
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([attemptId, idempotencyKey])
+  @@unique([attemptId, questionId])
+  @@map("candidate_answers")
+}
+
+model Submission {
+  id             String             @id @default(uuid()) @db.VarChar(36)
+  tenantId       String             @db.VarChar(36)
+  attemptId      String             @unique @db.VarChar(36)
+  attempt        ExaminationAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  idempotencyKey String             @db.VarChar(80)
+  receiptHash    String             @db.VarChar(128)
+  clientTime     DateTime?
+  status         String             @default("ACCEPTED") @db.VarChar(40)
+  /// Original receipt returned verbatim on idempotent retries (never recomputed from live rows).
+  receipt        Json?
+  createdAt      DateTime           @default(now())
+
+  @@unique([attemptId, idempotencyKey])
+  @@map("submissions")
+}
+
+model Evaluation {
+  id          String             @id @default(uuid()) @db.VarChar(36)
+  tenantId    String             @db.VarChar(36)
+  attemptId   String             @db.VarChar(36)
+  attempt     ExaminationAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  evaluatorId String?            @db.VarChar(36)
+  evaluator   User?              @relation(fields: [evaluatorId], references: [id], onDelete: SetNull)
+  mode        EvaluationMode
+  blind       Boolean            @default(false)
+  rubric      Json?
+  score       Float?
+  maxScore    Float?
+  feedback    String?            @db.Text
+  status      EvaluationStatus   @default(PENDING)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([attemptId, status])
+  @@map("evaluations")
+}
+
+model Result {
+  id            String             @id @default(uuid()) @db.VarChar(36)
+  tenantId      String             @db.VarChar(36)
+  attemptId     String             @db.VarChar(36)
+  examinationId String             @db.VarChar(36)
+  candidateId   String             @db.VarChar(36)
+  attempt       ExaminationAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  examination   Examination        @relation(fields: [examinationId], references: [id], onDelete: Cascade)
+  candidate     Candidate          @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  score         Float
+  maxScore      Float
+  percentage    Float
+  passed        Boolean
+  rank          Int?
+  status        ResultStatus       @default(PENDING)
+  version       Int                @default(1)
+  publishedAt   DateTime?
+  approvedBy    String?            @db.VarChar(36)
+  metadata      Json?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  certificate Certificate?
+
+  @@unique([attemptId, version])
+  @@index([tenantId, examinationId, status])
+  @@map("results")
+}
+
+model Certificate {
+  id                String    @id @default(uuid()) @db.VarChar(36)
+  tenantId          String    @db.VarChar(36)
+  resultId          String    @unique @db.VarChar(36)
+  result            Result    @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  certificateNumber String    @db.VarChar(80)
+  pdfKey            String?   @db.VarChar(512)
+  verificationCode  String    @unique @db.VarChar(120)
+  issuedAt          DateTime  @default(now())
+  revokedAt         DateTime?
+
+  @@index([tenantId])
+  @@map("certificates")
+}
+
+// ---------------------------------------------------------------------------
+// Integrations and API access
+// ---------------------------------------------------------------------------
+
+model Integration {
+  id              String              @id @default(uuid()) @db.VarChar(36)
+  tenantId        String              @db.VarChar(36)
+  organisation    Organisation        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name            String              @db.VarChar(200)
+  provider        String              @db.VarChar(120)
+  category        String?             @db.VarChar(120)
+  status          IntegrationStatus   @default(NOT_CONNECTED)
+  authType        IntegrationAuthType @default(API_KEY)
+  config          Json?
+  scopes          Json?
+  ownerUserId     String?             @db.VarChar(36)
+  lastConnectedAt DateTime?
+  lastSyncAt      DateTime?
+  healthStatus    HealthStatus        @default(UNKNOWN)
+  errorCount      Int                 @default(0)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  credentials IntegrationCredential[]
+  permissions IntegrationPermission[]
+  endpoint    WebhookEndpoint?
+  events      WebhookEvent[]
+
+  @@index([tenantId, status])
+  @@map("integrations")
+}
+
+model IntegrationCredential {
+  id            String      @id @default(uuid()) @db.VarChar(36)
+  tenantId      String      @db.VarChar(36)
+  integrationId String      @db.VarChar(36)
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  keyId         String      @db.VarChar(120)
+  ciphertext    String      @db.Text
+  iv            String      @db.VarChar(64)
+  authTag       String      @db.VarChar(64)
+  algorithm     String      @db.VarChar(40)
+  expiresAt     DateTime?
+  rotatedAt     DateTime?
+  revokedAt     DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@index([integrationId, revokedAt])
+  @@map("integration_credentials")
+}
+
+model IntegrationPermission {
+  id            String      @id @default(uuid()) @db.VarChar(36)
+  tenantId      String      @db.VarChar(36)
+  integrationId String      @db.VarChar(36)
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  permission    String      @db.VarChar(160)
+  grantedBy     String?     @db.VarChar(36)
+  grantor       User?       @relation(fields: [grantedBy], references: [id], onDelete: SetNull)
+  grantedAt     DateTime    @default(now())
+  revokedAt     DateTime?
+
+  @@unique([integrationId, permission])
+  @@map("integration_permissions")
+}
+
+model ApiClient {
+  id           String        @id @default(uuid()) @db.VarChar(36)
+  tenantId     String?       @db.VarChar(36)
+  organisation Organisation? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String        @db.VarChar(200)
+  clientId     String        @unique @db.VarChar(120)
+  secretHash   String        @db.Text
+  description  String?       @db.Text
+  status       String        @default("ACTIVE") @db.VarChar(40)
+  createdBy    String?       @db.VarChar(36)
+  creator      User?         @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt    DateTime      @default(now())
+  revokedAt    DateTime?
+
+  keys ApiKey[]
+
+  @@map("api_clients")
+}
+
+model ApiKey {
+  id         String     @id @default(uuid()) @db.VarChar(36)
+  tenantId   String?    @db.VarChar(36)
+  clientId   String?    @db.VarChar(36)
+  client     ApiClient? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  prefix     String     @db.VarChar(40)
+  secretHash String     @db.Text
+  scopes     Json?
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([prefix])
+  @@map("api_keys")
+}
+
+model WebhookEndpoint {
+  id              String       @id @default(uuid()) @db.VarChar(36)
+  tenantId        String       @db.VarChar(36)
+  organisation    Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  integrationId   String?      @unique @db.VarChar(36)
+  integration     Integration? @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  url             String       @db.VarChar(1000)
+  secretEncrypted String       @db.Text
+  events          Json?
+  status          String       @default("ACTIVE") @db.VarChar(40)
+  createdAt       DateTime     @default(now())
+  disabledAt      DateTime?
+
+  eventsLog WebhookEvent[]
+
+  @@map("webhook_endpoints")
+}
+
+model WebhookEvent {
+  id            String           @id @default(uuid()) @db.VarChar(36)
+  tenantId      String           @db.VarChar(36)
+  endpointId    String?          @db.VarChar(36)
+  integrationId String?          @db.VarChar(36)
+  endpoint      WebhookEndpoint? @relation(fields: [endpointId], references: [id], onDelete: SetNull)
+  integration   Integration?     @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  eventType     String           @db.VarChar(120)
+  payload       Json
+  status        String           @default("PENDING") @db.VarChar(40)
+  attempts      Int              @default(0)
+  lastAttemptAt DateTime?
+  nextAttemptAt DateTime?
+  error         String?          @db.Text
+  createdAt     DateTime         @default(now())
+
+  @@index([tenantId, status, nextAttemptAt])
+  @@map("webhook_events")
+}
+
+// ---------------------------------------------------------------------------
+// Audit, security and notifications
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id             String        @id @default(uuid()) @db.VarChar(36)
+  tenantId       String?       @db.VarChar(36)
+  organisation   Organisation? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  actorUserId    String?       @db.VarChar(36)
+  actor          User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmail     String?       @db.VarChar(320)
+  action         String        @db.VarChar(160)
+  resourceType   String        @db.VarChar(120)
+  resourceId     String?       @db.VarChar(120)
+  previousValues Json?
+  newValues      Json?
+  outcome        AuditOutcome
+  ip             String?       @db.VarChar(64)
+  userAgent      String?       @db.Text
+  sessionId      String?       @db.VarChar(36)
+  correlationId  String?       @db.VarChar(120)
+  requestId      String?       @db.VarChar(120)
+  createdAt      DateTime      @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+model SecurityAlert {
+  id           String        @id @default(uuid()) @db.VarChar(36)
+  tenantId     String?       @db.VarChar(36)
+  organisation Organisation? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  severity     AlertSeverity
+  category     String        @db.VarChar(120)
+  title        String        @db.VarChar(300)
+  description  String?       @db.Text
+  source       String?       @db.VarChar(160)
+  evidenceRef  String?       @db.VarChar(512)
+  status       String        @default("OPEN") @db.VarChar(40)
+  assignedTo   String?       @db.VarChar(36)
+  createdAt    DateTime      @default(now())
+  resolvedAt   DateTime?
+
+  incidents SecurityIncident[]
+
+  @@index([tenantId, severity, status])
+  @@map("security_alerts")
+}
+
+model SecurityIncident {
+  id              String         @id @default(uuid()) @db.VarChar(36)
+  tenantId        String?        @db.VarChar(36)
+  organisation    Organisation?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  alertId         String?        @db.VarChar(36)
+  alert           SecurityAlert? @relation(fields: [alertId], references: [id], onDelete: SetNull)
+  severity        AlertSeverity
+  classification  String         @db.VarChar(120)
+  status          IncidentStatus @default(OPEN)
+  assignedTo      String?        @db.VarChar(36)
+  notes           String?        @db.Text
+  responseActions Json?
+  resolvedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([tenantId, status, severity])
+  @@map("security_incidents")
+}
+
+model ExaminationSecurityEvent {
+  id           String             @id @default(uuid()) @db.VarChar(36)
+  tenantId     String             @db.VarChar(36)
+  attemptId    String             @db.VarChar(36)
+  attempt      ExaminationAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  eventType    String             @db.VarChar(120)
+  category     String             @db.VarChar(120)
+  severity     AlertSeverity
+  evidence     Json?
+  clientTime   DateTime?
+  serverTime   DateTime           @default(now())
+  riskWeight   Float              @default(0)
+  investigated Boolean            @default(false)
+
+  @@index([attemptId, serverTime])
+  @@index([tenantId, eventType, serverTime])
+  @@map("examination_security_events")
+}
+
+model RiskAssessment {
+  id           String             @id @default(uuid()) @db.VarChar(36)
+  tenantId     String             @db.VarChar(36)
+  attemptId    String             @db.VarChar(36)
+  attempt      ExaminationAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  score        Int
+  level        RiskLevel
+  rules        Json?
+  modelVersion String?            @db.VarChar(60)
+  reviewedBy   String?            @db.VarChar(36)
+  reviewedAt   DateTime?
+  appealStatus String?            @db.VarChar(40)
+  createdAt    DateTime           @default(now())
+
+  @@index([attemptId, createdAt])
+  @@map("risk_assessments")
+}
+
+model DeviceRegistration {
+  id              String       @id @default(uuid()) @db.VarChar(36)
+  tenantId        String       @db.VarChar(36)
+  organisation    Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId          String?      @db.VarChar(36)
+  candidateId     String?      @db.VarChar(36)
+  candidate       Candidate?   @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  deviceId        String       @db.VarChar(200)
+  platform        String?      @db.VarChar(60)
+  model           String?      @db.VarChar(160)
+  osVersion       String?      @db.VarChar(120)
+  clientVersion   String?      @db.VarChar(60)
+  integrityStatus String       @default("UNKNOWN") @db.VarChar(60)
+  publicKey       String?      @db.Text
+  registeredAt    DateTime     @default(now())
+  lastSeenAt      DateTime?
+  revokedAt       DateTime?
+
+  sessions ExamSession[]
+
+  @@unique([tenantId, deviceId])
+  @@map("device_registrations")
+}
+
+model ExamSession {
+  id                  String              @id @default(uuid()) @db.VarChar(36)
+  tenantId            String              @db.VarChar(36)
+  attemptId           String              @unique @db.VarChar(36)
+  attempt             ExaminationAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  deviceId            String?             @db.VarChar(36)
+  device              DeviceRegistration? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  sessionTokenHash    String              @db.Text
+  securityProfile     SecurityProfile     @default(STANDARD_BROWSER)
+  secureClientVersion String?             @db.VarChar(60)
+  heartbeatAt         DateTime?
+  disconnectedAt      DateTime?
+  terminatedAt        DateTime?
+  createdAt           DateTime            @default(now())
+
+  @@index([tenantId, heartbeatAt])
+  @@map("exam_sessions")
+}
+
+model NotificationTemplate {
+  id        String              @id @default(uuid()) @db.VarChar(36)
+  tenantId  String?             @db.VarChar(36)
+  key       String              @db.VarChar(160)
+  channel   NotificationChannel
+  subject   String?             @db.VarChar(300)
+  body      String              @db.Text
+  variables Json?
+  active    Boolean             @default(true)
+  createdAt DateTime            @default(now())
+
+  @@unique([tenantId, key, channel])
+  @@map("notification_templates")
+}
+
+model Notification {
+  id                String              @id @default(uuid()) @db.VarChar(36)
+  tenantId          String?             @db.VarChar(36)
+  organisation      Organisation?       @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  userId            String?             @db.VarChar(36)
+  user              User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  candidateId       String?             @db.VarChar(36)
+  candidate         Candidate?          @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  channel           NotificationChannel
+  templateKey       String?             @db.VarChar(160)
+  recipient         String              @db.VarChar(320)
+  subject           String?             @db.VarChar(300)
+  body              String              @db.Text
+  status            String              @default("PENDING") @db.VarChar(40)
+  providerMessageId String?             @db.VarChar(200)
+  sentAt            DateTime?
+  readAt            DateTime?
+  createdAt         DateTime            @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Billing, files and system health
+// ---------------------------------------------------------------------------
+
+model Subscription {
+  id           String             @id @default(uuid()) @db.VarChar(36)
+  tenantId     String             @unique @db.VarChar(36)
+  organisation Organisation       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan         String             @db.VarChar(80)
+  status       SubscriptionStatus @default(TRIAL)
+  seats        Int?
+  billingCycle String             @default("MONTHLY") @db.VarChar(40)
+  startDate    DateTime           @default(now())
+  endDate      DateTime?
+  trialEndsAt  DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  payments Payment[]
+
+  @@map("subscriptions")
+}
+
+model Payment {
+  id                String        @id @default(uuid()) @db.VarChar(36)
+  tenantId          String        @db.VarChar(36)
+  organisation      Organisation  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptionId    String?       @db.VarChar(36)
+  subscription      Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  provider          String        @db.VarChar(80)
+  providerReference String?       @db.VarChar(200)
+  amount            Decimal       @db.Decimal(14, 2)
+  currency          String        @default("INR") @db.VarChar(8)
+  status            String        @default("PENDING") @db.VarChar(40)
+  paidAt            DateTime?
+  createdAt         DateTime      @default(now())
+
+  @@index([tenantId, createdAt])
+  @@map("payments")
+}
+
+model FileObject {
+  id           String       @id @default(uuid()) @db.VarChar(36)
+  tenantId     String       @db.VarChar(36)
+  organisation Organisation @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  objectKey    String       @db.VarChar(512)
+  bucket       String       @db.VarChar(160)
+  mimeType     String       @db.VarChar(160)
+  sizeBytes    BigInt
+  checksum     String?      @db.VarChar(128)
+  purpose      String       @db.VarChar(80)
+  uploadedBy   String?      @db.VarChar(36)
+  createdAt    DateTime     @default(now())
+
+  @@unique([bucket, objectKey])
+  @@index([tenantId, purpose])
+  @@map("file_objects")
+}
+
+model SystemHealthEvent {
+  id         String       @id @default(uuid()) @db.VarChar(36)
+  component  String       @db.VarChar(120)
+  status     HealthStatus
+  latencyMs  Int?
+  details    Json?
+  detectedAt DateTime     @default(now())
+  resolvedAt DateTime?
+
+  @@index([component, detectedAt])
+  @@map("system_health_events")
+}
+
+// ---------------------------------------------------------------------------
+// Platform administration (Phase 6)
+// ---------------------------------------------------------------------------
+
+model SupportTicket {
+  id             String        @id @default(uuid()) @db.VarChar(36)
+  tenantId       String?       @db.VarChar(36)
+  organisation   Organisation? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  subject        String        @db.VarChar(300)
+  category       String        @db.VarChar(80)
+  priority       String        @db.VarChar(40)
+  status         String        @default("OPEN") @db.VarChar(40)
+  requesterEmail String        @db.VarChar(320)
+  body           String        @db.Text
+  assignee       String?       @db.VarChar(36)
+  resolution     String?       @db.Text
+  resolvedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([tenantId, status, createdAt])
+  @@map("support_tickets")
+}
+
+model PlatformSetting {
+  key         String   @id @db.VarChar(160)
+  value       Json
+  description String?  @db.Text
+  updatedBy   String?  @db.VarChar(36)
+  updatedAt   DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+model ApiRequestLog {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  tenantId   String?  @db.VarChar(36)
+  clientId   String?  @db.VarChar(36)
+  method     String   @db.VarChar(10)
+  path       String   @db.VarChar(500)
+  statusCode Int
+  outcome    String   @db.VarChar(40)
+  latencyMs  Int
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([createdAt, outcome])
+  @@map("api_request_logs")
+}

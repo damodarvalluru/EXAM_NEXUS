@@ -1,7 +1,12 @@
 # ADR-0002: Shared schema with tenant_id and Row-Level Security
 
-- **Status:** Accepted
+- **Status:** Superseded on 2026-11-22 by the
+  [TiDB Cloud and application-level tenant scoping ADR](0003-tidb-cloud-and-application-tenant-scoping.md)
 - **Date:** 2026-11-21
+
+> This record is kept for history. The shared-schema and `tenant_id` decisions still stand, but
+> PostgreSQL RLS no longer applies: the database is now TiDB Cloud (MySQL-compatible). See the
+> superseding ADR for the current tenant isolation approach.
 
 ## Context
 

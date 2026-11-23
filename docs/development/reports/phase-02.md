@@ -4,6 +4,46 @@
 **Status:** Code complete and verified by build, lint and unit tests. Database/Redis-dependent flows
 were not executed locally because Docker/Postgres/Redis are unavailable in this environment.
 
+## TiDB Cloud migration note (2026-11-22)
+
+The sections below are the historical Phase 2 record as written on 2026-11-21. On 2026-11-22 the
+database moved from local PostgreSQL to TiDB Cloud Serverless (MySQL-compatible, TLS required).
+Statements about live RLS verification now refer to application-level tenant scoping in
+`PrismaService` (implementation being finalised separately), not PostgreSQL policies. Runtime uses a
+least-privilege app user in `DATABASE_URL`; the cluster root user is reserved for migrations via
+`DIRECT_URL`. Commands using `docker compose` for Postgres or `prisma migrate dev` are stale; see the
+current [getting-started guide](../getting-started.md).
+
+## Final integration verification (2026-11-22)
+
+This section supersedes the pending runtime statements in the historical record above.
+
+- Auth lockout, MFA and step-up fixes were verified in the final integration pass; targeted auth
+  tests passed **10/10**.
+- Redis counters are available at runtime (`docker exec examnexus-redis redis-cli ping` → `PONG`),
+  so Redis-backed rate limits and token replay tracking no longer depend on missing infrastructure.
+  Docker stopped again during the final worker run and was restarted, with the ping re-verified.
+- Redis failure-counter clearing on reactivation/unlock is implemented in
+  `RateLimitService.clearUserFailures()` and wired into admin user reactivation/PIN rotation,
+  organisation member reactivation/review/invitation acceptance and auth auto-unlock after lockout
+  expiry; it is best-effort when Redis is unavailable. Runtime check: seeded
+  `failures:login:1.2.3.4:user-1`, `failures:pin:5.6.7.8:user-1` and `failures:mfa:user-1`, called
+  `clearUserFailures({ userId: 'user-1', email: 'user-1@example.com' })`, logged "Cleared 3 failure
+  counter(s) for user user-1"; `MGET` returned `[null,null,null]`. Combined fix tests passed
+  (5 suites / 50 tests, covering rate-limit, admin, organisations and auth security).
+- Final checks passed: `pnpm lint`, `pnpm test` (API 14 suites passed / 2 skipped, 93 tests passed /
+  10 skipped; web 2 tests passed), `pnpm build` and
+  `pnpm --filter @examnexus/api exec prisma validate`. Live DB suite with Redis running:
+  `RUN_DB_TESTS=1 pnpm --filter @examnexus/api test -- --runInBand` → 16 suites, 103 tests passed.
+  Applied migrations: `20261122000000_init`, `20261122120000_admin_integration_support`,
+  `20261122130000_exam_integrity`; `prisma migrate status` → "Database schema is up to date!".
+- The API boots successfully (after importing `CommonModule` into `ExaminationsModule` so
+  `AuditService` resolves); `/health/ready` returns 200 with database up (609 ms), redis up (1 ms)
+  and storage up, and `/api/v1/modules` lists phases 1–6 implemented.
+- Residual/not claimed: browser E2E login/MFA/PIN journeys, real external-provider calls, production
+  alerting/on-call/SLA, paid-billing provider actions and Phases 7–8. No production security
+  assurance is implied by these checks.
+
 ## Features completed
 
 - Password and strong PIN login for Super Admins and all account types. PIN authentication requires

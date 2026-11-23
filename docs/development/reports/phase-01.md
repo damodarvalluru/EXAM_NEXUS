@@ -4,6 +4,48 @@
 **Status:** Code and configuration complete. Local infrastructure runtime verification is pending
 because Docker is not installed in the development environment.
 
+## TiDB Cloud migration note (2026-11-22)
+
+The sections below are the historical Phase 1 record as written on 2026-11-21. On 2026-11-22 the
+database was migrated from local PostgreSQL to TiDB Cloud Serverless (MySQL 8.0 protocol, TLS
+required). The PostgreSQL `0001_init` / `0002_rls` migrations and RLS SQL were moved to
+`apps/api/prisma/legacy-postgres/`; the applied baseline is now the generated MySQL migration
+`20261122000000_init`. RLS claims below are no longer true of the current runtime: tenant isolation
+is now application-level scoping in `PrismaService` (implementation being finalised separately).
+Commands referencing a `postgres` container, `psql`, port 5432 or `prisma migrate dev` are stale;
+use the current [getting-started guide](../getting-started.md) and
+[setup guide](../setup-installation-guide.md).
+
+## Final integration verification (2026-11-22)
+
+This section supersedes the outstanding infrastructure statements in the historical record above.
+
+- Docker Desktop/Redis were restarted; `docker exec examnexus-redis redis-cli ping` → `PONG`. Docker
+  stopped again during the final worker run and was restarted once more, with `redis-cli ping` →
+  `PONG` re-verified. Redis is running locally via Docker Compose.
+- Applied migrations: `20261122000000_init`, `20261122120000_admin_integration_support` and
+  `20261122130000_exam_integrity`. `prisma migrate status` → "Database schema is up to date!". The
+  integrity migration adds frozen published-snapshot `contentHash`, attempt `versionId` binding, a
+  stored submission receipt and a unique answer index; it is conditional because an earlier failed
+  attempt had already added `contentHash`.
+- Final checks: `pnpm lint`, `pnpm build` and
+  `pnpm --filter @examnexus/api exec prisma validate` all passed; `pnpm test` passed with API
+  14 suites passed / 2 skipped, 93 tests passed / 10 skipped and web 2 tests passed.
+- Live DB suite with Redis running:
+  `RUN_DB_TESTS=1 pnpm --filter @examnexus/api test -- --runInBand` → 16 suites, 103 tests passed.
+- The API boots successfully. A startup DI blocker was fixed by importing `CommonModule` into
+  `ExaminationsModule` so `AuditService` resolves.
+- Live smoke: `/health/live` ok; `/health/ready` 200 with database up, redis up and storage up;
+  `/api/v1/modules` returned 8 entries, listing phases 1–6 as implemented.
+  Unauthenticated `POST /api/v1/integrations/ingest/candidates` returned 401 and
+  `POST /api/v1/integrations/webhooks/inbound/<random-uuid>` returned 404 for an unknown endpoint.
+  No `/api/v1/api/v1/...` double-prefixed route appears in the startup log.
+- Combined fix verification: 5 suites / 50 tests passed (rate-limit, admin, organisations, auth
+  security). Redis failure-counter clearing on reactivation/unlock and legacy slash-form document
+  key compatibility are verified in the Phase 2 and Phase 3 sections below.
+- Residual/not claimed: browser E2E automation, real third-party outbound calls, production
+  alerting/on-call/SLA, paid billing provider mutations and Phases 7–8.
+
 ## Features completed
 
 - Requirements analysis and system architecture (SaaS, multi-tenant, hybrid-ready, modular monolith).

@@ -21,3 +21,9 @@ source of truth.
 Positive: reliability and auditability. Negative: more backend round trips; requires careful
 reconciliation UI. Mitigation: autosave queue with backoff, WebSocket deltas, explicit recovery
 banner on reconnect, load tests that inject disconnections.
+
+## TiDB Cloud migration note (2026-11-22)
+
+The exam-state authority decision is unchanged. "PostgreSQL is the durable source of truth" now
+reads **TiDB Cloud (MySQL-compatible)** after the database migration; Redis still holds transient
+state.

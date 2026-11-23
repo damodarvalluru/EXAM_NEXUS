@@ -1,8 +1,9 @@
 # Setup & Installation Guide (one-time)
 
 This is the single reference for installing and configuring ExamNexus locally. It is based on the
-actual `package.json`, `pnpm-workspace.yaml`, `docker-compose.yml`, Prisma schema/migrations and
-runtime config in this repository.
+actual `package.json`, `pnpm-workspace.yaml`, `docker-compose.yml`, Prisma schema/migrations,
+`.env.example` and runtime config in this repository. The database is a TiDB Cloud Serverless
+cluster (MySQL-compatible); Docker Compose runs Redis only.
 
 Commands below assume **Windows PowerShell** from the repository root, unless stated otherwise.
 
@@ -20,7 +21,7 @@ Commands below assume **Windows PowerShell** from the repository root, unless st
 | Backend validation | `class-validator`, `class-transformer`, `zod` | `0.15.1`, `0.5.1`, `4.6.7` | No |
 | Password/PIN hashing | `@node-rs/argon2` | `2.2.2` | No — prebuilt native binary via pnpm |
 | ORM | Prisma + `@prisma/client` | `6.19.3` | No — then generate client |
-| Database | PostgreSQL | `16-alpine` in Compose | Yes — Docker or native |
+| Database | TiDB Cloud Serverless (MySQL 8.0 protocol, TLS required) | Cluster `gateway01.us-east-1.prod.aws.tidbcloud.com:4000`, database `examnexus` | Yes — hosted credentials |
 | Cache/session store | Redis + `ioredis` | `7-alpine`, `6.0.0` | Yes — Docker or native |
 | HTTP cookies | `cookie-parser` | `1.4.7` | No |
 | Security headers | `helmet` | `8.3.0` | No |
@@ -44,10 +45,12 @@ Commands below assume **Windows PowerShell** from the repository root, unless st
 
 | Service | Required for Phases 2–3? | Notes |
 |---|---|---|
-| `postgres` | **Yes** | PostgreSQL 16; hosts all tenant data and RLS policies. |
 | `redis` | **Yes** | Rate limits, refresh-token reuse tracking, email/invite/reset tokens, phone OTPs. |
-| `minio` + `createbuckets` | No | S3-compatible object storage. Phase 3 uses **local disk**, not S3. |
-| `mailhog` | No | SMTP catcher is present in Compose but no mail provider is wired in code yet. |
+| `minio` + `createbuckets` | No | Optional profile; S3-compatible object storage. Phase 3 uses **local disk**, not S3. |
+| `mailhog` | No | Optional profile; SMTP catcher is present but no mail provider is wired in code yet. |
+
+There is no database service in `docker-compose.yml`. Tenant data lives on TiDB Cloud, reached over
+TLS with credentials from `.env` (see Section 4).
 
 ### Present but not required yet
 
@@ -103,7 +106,8 @@ Do **not** mix `npm install`, `yarn`, or `npx` dependency installs into this wor
 
 ### 1.3 Docker Desktop (recommended)
 
-Install Docker Desktop with Compose v2:
+Docker is needed for local Redis; MinIO and MailHog are optional profiles. There is no local
+PostgreSQL container. Install Docker Desktop with Compose v2:
 
 ```powershell
 winget install Docker.DockerDesktop
@@ -113,7 +117,8 @@ docker compose version
 
 Enable WSL2 integration when prompted. Start Docker Desktop before continuing.
 
-If you do not want Docker, see **Section 5.2 — native PostgreSQL and Redis**.
+If you do not want Docker, run Redis natively or use a managed Redis endpoint (Section 5.2). The
+TiDB Cloud database is hosted in all cases.
 
 ### 1.4 Git (optional)
 
@@ -185,11 +190,15 @@ API_PORT=3000
 WEB_PORT=5173
 API_PUBLIC_URL=http://localhost:3000
 WEB_PUBLIC_URL=http://localhost:5173
-DATABASE_URL=postgresql://examnexus:examnexus_dev@localhost:5432/examnexus?schema=public
-DIRECT_URL=postgresql://examnexus:examnexus_dev@localhost:5432/examnexus?schema=public
-POSTGRES_USER=examnexus
-POSTGRES_PASSWORD=examnexus_dev
-POSTGRES_DB=examnexus
+DATABASE_URL=mysql://<cluster-prefix>.<app-user>:<app-password>@gateway01.us-east-1.prod.aws.tidbcloud.com:4000/examnexus?sslaccept=strict
+DIRECT_URL=mysql://<cluster-prefix>.root:<root-password>@gateway01.us-east-1.prod.aws.tidbcloud.com:4000/examnexus?sslaccept=strict
+TIDB_HOST=gateway01.us-east-1.prod.aws.tidbcloud.com
+TIDB_PORT=4000
+TIDB_DATABASE=examnexus
+TIDB_APP_USER=<cluster-prefix>.<app-user>
+TIDB_APP_PASSWORD=<app-password>
+TIDB_USER=<cluster-prefix>.root
+TIDB_PASSWORD=<root-password>
 REDIS_URL=redis://localhost:6379
 S3_ENDPOINT=http://localhost:9000
 S3_REGION=us-east-1
@@ -214,6 +223,10 @@ KEYCLOAK_CLIENT_SECRET=
 
 Important notes:
 
+- Replace the `<cluster-prefix>.<app-user>` / `<app-password>` and `<cluster-prefix>.root` /
+  `<root-password>` placeholders with credentials supplied for this cluster. `.env.example` lists
+  the same `TIDB_*` variables. Keep the root user out of the API's `DATABASE_URL`.
+- Both database URLs must keep `?sslaccept=strict`: TLS is required on this cluster.
 - `.env` is ignored by git. Never commit it.
 - `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` must be at least 16 characters; 48-byte base64 is used above.
 - `ENCRYPTION_MASTER_KEY` should be a base64-encoded 32-byte key, as generated above.
@@ -253,14 +266,17 @@ If you change this value, restart `pnpm dev` or rebuild the web app. Vite embeds
 
 The API will refuse to start if any of these are missing or invalid:
 
-- `DATABASE_URL`
-- `DIRECT_URL`
+- `DATABASE_URL` (least-privilege app user, `mysql://` + `?sslaccept=strict`)
+- `DIRECT_URL` (cluster root user, migrations only)
 - `REDIS_URL`
 - `JWT_ACCESS_SECRET` (min 16 chars)
 - `JWT_REFRESH_SECRET` (min 16 chars)
 - `ENCRYPTION_MASTER_KEY` (min 16 chars)
 
-Optional with defaults: `NODE_ENV`, `API_PORT`, `CORS_ORIGIN`, `COOKIE_DOMAIN`, `STORAGE_LOCAL_PATH`.
+Optional with defaults: `NODE_ENV`, `API_PORT`, `CORS_ORIGIN`, `COOKIE_DOMAIN`, `STORAGE_LOCAL_PATH`,
+`INTEGRATION_OUTBOUND_ALLOWLIST` (empty = any public HTTPS host; pin this in production) and
+`WEBHOOK_TOLERANCE_SECONDS` (default `300`). `TIDB_*` variables document the cluster connection;
+`DATABASE_URL` and `DIRECT_URL` are the values actually consumed by Prisma.
 
 ---
 
@@ -273,47 +289,31 @@ docker compose up -d
 docker compose ps
 ```
 
-By default only `examnexus-postgres` and `examnexus-redis` start — these are the services required
-for Phases 2–3. MinIO and MailHog are behind the `optional` Compose profile and are not needed for
-the local storage adapter or current auth flows. To start them anyway:
+Only `examnexus-redis` starts by default; it is required for Phases 2–3. MinIO and MailHog are
+behind the `optional` Compose profile and are not needed for the local storage adapter or current
+auth flows. To start them anyway:
 
 ```powershell
 docker compose --profile optional up -d
 ```
 
-Check database and Redis readiness:
+Check Redis readiness:
 
 ```powershell
-docker compose logs --tail=30 postgres
 docker compose logs --tail=30 redis
 docker compose exec redis redis-cli ping
 ```
 
 Expected Redis response: `PONG`.
 
-If ports `5432` or `6379` are already in use, either stop the conflicting service or edit the port
-mappings in `docker-compose.yml`. The optional profile adds `9000`, `9001`, `1025`, and `8025`.
+If port `6379` is already in use, either stop the conflicting service or edit the port mapping in
+`docker-compose.yml`. The optional profile adds `9000`, `9001`, `1025`, and `8025`. There is no
+local port `5432` service: the database is hosted on TiDB Cloud.
 
-### 5.2 Native PostgreSQL and Redis path
+### 5.2 Redis and TiDB Cloud without Docker
 
-Install PostgreSQL 16 (or 15+) and Redis 7. On Windows, Redis is commonly run via WSL2 or Memurai.
-
-Create the application role and database. The API role must **not** be a superuser and must not have
-`BYPASSRLS`, because RLS is a hard isolation boundary.
-
-```sql
-CREATE ROLE examnexus LOGIN PASSWORD 'examnexus_dev';
-CREATE DATABASE examnexus OWNER examnexus;
-```
-
-Run that as a PostgreSQL administrator, for example:
-
-```powershell
-psql -U postgres -c "CREATE ROLE examnexus LOGIN PASSWORD 'examnexus_dev';"
-psql -U postgres -c "CREATE DATABASE examnexus OWNER examnexus;"
-```
-
-Start Redis:
+Run Redis natively (on Windows, commonly via WSL2 or Memurai) or point `REDIS_URL` at a managed Redis
+instance:
 
 ```powershell
 redis-server --appendonly yes
@@ -322,8 +322,10 @@ redis-cli ping
 
 Expected: `PONG`.
 
-Then make sure the `DATABASE_URL`, `DIRECT_URL`, and `REDIS_URL` values in `.env` point to your
-native services.
+TiDB Cloud is always remote. Verify TLS connectivity and credentials with Prisma after generating
+the client (Section 6); a `P1001` error means the host, port, credentials or TLS settings in
+`DATABASE_URL`/`DIRECT_URL` are wrong. Keep the least-privilege app user in `DATABASE_URL`; only
+migrations use the cluster root user via `DIRECT_URL`.
 
 ---
 
@@ -337,26 +339,42 @@ pnpm --filter @examnexus/api exec prisma migrate deploy
 
 Migrations applied:
 
-- `0001_init` — creates the schema.
-- `0002_rls` — installs `pgcrypto`, tenant-context functions, `FORCE ROW LEVEL SECURITY`, and tenant
-  isolation policies. Do not skip it.
+- `20261122000000_init` — the generated MySQL migration that creates the current schema. It replaces
+  the PostgreSQL `0001_init` / `0002_rls` migrations, which are archived under
+  `apps/api/prisma/legacy-postgres/` and must not be applied to TiDB Cloud.
 
-Verify RLS is active:
+Schema notes:
+
+- `apps/api/prisma/schema.prisma` uses `provider = "mysql"` with `DATABASE_URL` for runtime and
+  `DIRECT_URL` for migrations (`directUrl`).
+- UUID values are `VARCHAR(36)`; the nine former PostgreSQL `String[]` columns are nullable `Json`
+  columns.
+- Tenant isolation is enforced in application code via `PrismaService` scoping, not by database RLS.
+  There is no SQL policy-verification step.
+
+### 6.1 Changing the schema (no shadow database)
+
+`prisma migrate dev` cannot create its shadow database on this TiDB Cloud cluster. Generate the SQL
+with `prisma migrate diff`, review it, commit it as a new migration, then apply it with
+`prisma migrate deploy`. Paths below are relative to `apps/api` because `pnpm --filter` runs Prisma
+from that package.
 
 ```powershell
-docker compose exec postgres psql -U examnexus -d examnexus -c "SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname='public' ORDER BY tablename;"
-docker compose exec postgres psql -U examnexus -d examnexus -c "SELECT tablename, policyname FROM pg_policies WHERE schemaname='public' ORDER BY tablename;"
-```
+# One-off baseline example: empty -> current schema.
+$sql = pnpm --filter @examnexus/api exec prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script
+$target = 'prisma/migrations/<YYYYMMDDHHMMSS>_describe_your_change/migration.sql'
+New-Item -ItemType Directory -Force -Path (Split-Path (Join-Path 'apps/api' $target)) | Out-Null
+[System.IO.File]::WriteAllText((Join-Path 'apps/api' $target), ($sql -join "`n"), [System.Text.UTF8Encoding]::new($false))
 
-`rowsecurity` should be `true` for tenant tables, and policies such as `tenant_isolation`,
-`permissions_read`, `permissions_write`, and `platform_only` should be listed.
-
-If you change `schema.prisma` later, create a new migration instead of editing applied ones:
-
-```powershell
-pnpm --filter @examnexus/api prisma:migrate:dev -- --name describe_your_change
+pnpm --filter @examnexus/api exec prisma migrate deploy
 pnpm --filter @examnexus/api prisma:generate
 ```
+
+For an incremental change, keep a copy of the previously committed schema and diff
+`--from-schema-datamodel <previous-schema> --to-schema-datamodel prisma/schema.prisma --script`
+instead of `--from-empty`. Do not use `--from-migrations` / `--to-migrations`: those diff modes need
+a shadow database. Write migration files as UTF-8 without a BOM, never edit an applied migration,
+and never commit generated credentials.
 
 ---
 
@@ -372,8 +390,8 @@ The seed script does not load the root `.env` by itself, so export the required 
 current PowerShell session. Use the same `ENCRYPTION_MASTER_KEY` value you generated in Section 4.1.
 
 ```powershell
-$env:DATABASE_URL          = 'postgresql://examnexus:examnexus_dev@localhost:5432/examnexus?schema=public'
-$env:DIRECT_URL            = $env:DATABASE_URL
+$env:DATABASE_URL          = 'mysql://<cluster-prefix>.<app-user>:<app-password>@gateway01.us-east-1.prod.aws.tidbcloud.com:4000/examnexus?sslaccept=strict'
+$env:DIRECT_URL            = 'mysql://<cluster-prefix>.root:<root-password>@gateway01.us-east-1.prod.aws.tidbcloud.com:4000/examnexus?sslaccept=strict'
 $env:ENCRYPTION_MASTER_KEY = '<paste the 32-byte base64 key from .env>'
 $env:SUPER_ADMIN_EMAIL     = 'admin@example.com'
 $env:SUPER_ADMIN_PASSWORD  = 'a-long-unique-password-at-least-12-chars'
@@ -384,6 +402,8 @@ pnpm --filter @examnexus/api seed:super-admin
 
 Rules:
 
+- Use the same values as `.env`: the seed writes through the least-privilege `DATABASE_URL` app user.
+  `DIRECT_URL` is exported only because env validation requires it; the seed does not migrate.
 - Password and PIN must each be at least 12 characters.
 - The command prints a TOTP secret, `otpauth://` URI, current code, and 10 recovery codes **once**.
   Store them offline immediately.
@@ -437,6 +457,9 @@ docker compose ps
 docker compose exec redis redis-cli ping
 ```
 
+Compose should list `examnexus-redis` (and only the optional services you enabled); the database is
+verified by the API's `/health/ready` check below.
+
 ### 9.2 Health
 
 ```powershell
@@ -455,6 +478,11 @@ pnpm build
 ```
 
 Current expected results: API Jest suite passes, web Vitest suite passes, TypeScript builds pass.
+
+The CI workflow (`.github/workflows/ci.yml`) runs install, shared build, Prisma client generation,
+lint, tests and build on pushes and pull requests. Client generation uses placeholder `mysql://`
+URLs with `?sslaccept=strict`; CI has no database service and does not run migrations. A green CI
+run is not evidence of database connectivity or tenant isolation.
 
 ### 9.4 Browser journey
 
@@ -486,11 +514,14 @@ pnpm --filter @examnexus/api dev              # API only
 pnpm --filter @examnexus/web dev              # web only
 pnpm --filter @examnexus/shared dev           # shared contracts watch
 
-pnpm --filter @examnexus/api prisma:studio        # inspect DB
-pnpm --filter @examnexus/api prisma:generate      # regenerate client
-pnpm --filter @examnexus/api prisma:migrate:dev   # create local migration
-pnpm --filter @examnexus/api prisma:migrate:deploy # apply migrations
+pnpm --filter @examnexus/api prisma:studio         # inspect DB (app user; use read-only care)
+pnpm --filter @examnexus/api prisma:generate       # regenerate client
+pnpm --filter @examnexus/api exec prisma migrate status   # check applied migrations
+pnpm --filter @examnexus/api prisma:migrate:deploy # apply committed migrations
 ```
+
+Do not run `prisma migrate dev` against the TiDB Cloud cluster (no shadow database). Use the
+`prisma migrate diff` + `prisma migrate deploy` workflow in Section 6.1.
 
 Vite's port is hardcoded to `5173` in `apps/web/vite.config.ts`. The `WEB_PORT` value in `.env` is
 not currently read. To use another port:
@@ -507,8 +538,10 @@ Then update `CORS_ORIGIN` to match.
 
 When moving beyond local development:
 
-1. Use managed PostgreSQL and Redis, or hardened containers with persistent volumes.
-2. Run `pnpm --filter @examnexus/api prisma:migrate:deploy` as a release step.
+1. Use the TiDB Cloud cluster over TLS and a managed Redis service (or hardened Redis with a
+   persistent volume). There is no local database container to harden.
+2. Run `pnpm --filter @examnexus/api prisma:migrate:deploy` as a release step with `DIRECT_URL`
+   (cluster root user) scoped to the migration job only. Never use that credential in `DATABASE_URL`.
 3. Generate fresh 48-byte JWT secrets and a fresh 32-byte encryption key in your secret manager.
 4. Set `NODE_ENV=production`. The refresh cookie automatically becomes `Secure`.
 5. Set `CORS_ORIGIN` and `COOKIE_DOMAIN` to real HTTPS hostnames.
@@ -519,8 +552,10 @@ When moving beyond local development:
    pnpm build
    ```
 
-7. Keep the database role non-superuser and without `BYPASSRLS`. RLS is the tenant isolation
-   boundary, not just a frontend filter.
+7. Keep `DATABASE_URL` on the least-privilege app user with `?sslaccept=strict`. Tenant isolation is
+   enforced by application-level scoping (see the
+   [TiDB Cloud ADR](../../architecture/adr/0003-tidb-cloud-and-application-tenant-scoping.md));
+   review any raw SQL or non-Prisma access path that could bypass it.
 8. Serve verification documents from a protected, backed-up local volume, or implement the planned
    S3 adapter before relying on object storage.
 
@@ -533,12 +568,13 @@ When moving beyond local development:
 | `Invalid environment configuration: ...` | Missing/invalid required env var | Check `apps/api/.env` and root `.env`; restart API. |
 | `Environment variable not found: DIRECT_URL` | API package `.env` missing | Run `Copy-Item .env apps\api\.env -Force`. |
 | `ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT` for `prisma` | `prisma` treated as a pnpm script | Use `pnpm --filter @examnexus/api exec prisma ...`. |
-| Prisma `P1001` | Database unreachable | Start Postgres; verify `DATABASE_URL`/`DIRECT_URL`. |
+| Prisma `P1001` | TiDB Cloud unreachable | Verify host/port `gateway01.us-east-1.prod.aws.tidbcloud.com:4000`, credentials and `?sslaccept=strict` in `DATABASE_URL`/`DIRECT_URL`. |
+| TLS/handshake failure | Missing or strict TLS rejection | Keep `?sslaccept=strict` on both URLs; check the cluster's CA/TLS settings. |
+| `prisma migrate dev` fails to create a shadow database | Unsupported on this cluster | Use `prisma migrate diff` + `prisma migrate deploy` (Section 6.1). |
 | Prisma `P3019` or SQL syntax error at `﻿` | UTF-8 BOM in migration/lock file | Rewrite the affected file as UTF-8 without BOM. |
-| `schema "app" does not exist` | Old `0002_rls` lacked schema creation | Fixed in the committed migration; reset local DB if needed. |
-| `column "tenant_id" does not exist` | Policy used snake_case; Prisma column is `tenantId` | Fixed in the committed migration; reset local DB if needed. |
+| Wrong data visible in queries | Non-Prisma path bypassed tenant scoping | Route access through the scoped data-access boundary; see the TiDB Cloud ADR. |
 | Docker Desktop says "unable to start" | WSL2 not installed | Run `wsl --install --no-distribution` as Administrator, then restart. |
-| `pull access denied for minio/mc` | Optional image/tag failure | Default Compose now starts only Postgres + Redis; use `--profile optional` for MinIO. |
+| `pull access denied for minio/mc` | Optional image/tag failure | Default Compose now starts only Redis; use `--profile optional` for MinIO. |
 | Redis `ECONNREFUSED` | Redis not running | Start Redis; verify `REDIS_URL`. |
 | `/health/ready` says storage `down` | Storage directory missing | Create the path in `STORAGE_LOCAL_PATH`. |
 | CORS error in browser | Origin mismatch | Make `CORS_ORIGIN` exactly match the web URL. |
@@ -546,7 +582,7 @@ When moving beyond local development:
 | Frontend calls wrong API | `VITE_API_ORIGIN` not set | Set it in `apps/web/.env.local`; restart/rebuild web. |
 | `node -v` too old | Node below 20.19 | Upgrade Node; rerun `pnpm install`. |
 | pnpm says build scripts ignored | Build approval issue | Check `pnpm-workspace.yaml` `allowBuilds`; rerun `pnpm install`. |
-| Migration says already applied | Fresh DB expected but volume reused | Use `prisma migrate status`; reset only if intentional. |
+| Migration says already applied | Migration already recorded on the cluster | Use `prisma migrate status`; never hand-edit applied migrations. |
 | Playwright command not found | Playwright not configured | Use `pnpm test`; E2E tooling is future work. |
 
 ---
@@ -555,16 +591,17 @@ When moving beyond local development:
 
 - [ ] Node >= 20.19 installed
 - [ ] pnpm 12.3.4 active via Corepack
-- [ ] Docker Desktop running, or native PostgreSQL + Redis installed
+- [ ] TiDB Cloud app credentials and migration-only root credential available
+- [ ] Docker Desktop running (Redis), or native/managed Redis available
 - [ ] `pnpm install` completed
-- [ ] Root `.env` created with generated secrets
+- [ ] Root `.env` created with generated secrets and `mysql://` URLs using `?sslaccept=strict`
 - [ ] `apps/api/.env` copied from root `.env`
 - [ ] `apps/web/.env.local` created with `VITE_API_ORIGIN`
 - [ ] Local storage directory created
-- [ ] `docker compose up -d` succeeded
+- [ ] `docker compose up -d` succeeded for Redis
 - [ ] Prisma client generated
-- [ ] `0001_init` and `0002_rls` applied
-- [ ] RLS policies verified in SQL
+- [ ] All committed migrations applied via `prisma migrate deploy`
+- [ ] `prisma migrate status` reports no pending migrations
 - [ ] API built
 - [ ] Super Admin seeded; TOTP and recovery codes stored offline
 - [ ] `pnpm dev` running

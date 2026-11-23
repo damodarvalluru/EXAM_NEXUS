@@ -103,6 +103,23 @@ export const QuestionType = {
 } as const;
 export type QuestionType = (typeof QuestionType)[keyof typeof QuestionType];
 
+export const Difficulty = {
+  EASY: 'EASY',
+  MEDIUM: 'MEDIUM',
+  HARD: 'HARD',
+} as const;
+export type Difficulty = (typeof Difficulty)[keyof typeof Difficulty];
+
+export const ResultStatus = {
+  PENDING: 'PENDING',
+  UNDER_REVIEW: 'UNDER_REVIEW',
+  APPROVED: 'APPROVED',
+  PUBLISHED: 'PUBLISHED',
+  REVISION: 'REVISION',
+  WITHHELD: 'WITHHELD',
+} as const;
+export type ResultStatus = (typeof ResultStatus)[keyof typeof ResultStatus];
+
 export const AttemptStatus = {
   NOT_STARTED: 'NOT_STARTED',
   IN_PROGRESS: 'IN_PROGRESS',

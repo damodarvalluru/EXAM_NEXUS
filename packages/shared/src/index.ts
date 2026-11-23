@@ -5,3 +5,6 @@ export * from './permissions';
 export * from './auth';
 export * from './organisations';
 export * from './admin';
+export * from './examinations';
+export * from './integrations';
+export * from './platform';

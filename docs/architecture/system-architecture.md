@@ -11,8 +11,8 @@ Primary forces:
 
 | Force | Architectural response |
 | --- | --- |
-| Tenant isolation is non-negotiable | `tenant_id` on every tenant table + PostgreSQL RLS + request-scoped tenant context + backend permission checks |
-| Millions of candidates, large concurrent sessions | Stateless API instances, connection pooling (PgBouncer), Redis for exam state, partitioned high-volume tables, CDN for static assets, horizontal scaling |
+| Tenant isolation is non-negotiable | `tenant_id` on every tenant table + application-level tenant scoping in `PrismaService` + request-scoped tenant context + backend permission checks |
+| Millions of candidates, large concurrent sessions | Stateless API instances, TiDB Cloud connection management, Redis for exam state, partitioned high-volume tables, CDN for static assets, horizontal scaling |
 | Answers and timing must never be lost | Server-authoritative attempt state, append-only answer writes with idempotency keys, autosave reconciliation, immutable submissions |
 | Integrations are core | Dedicated integration gateway module with connector framework, encrypted credential vault, scoped grants, signed webhooks, SSRF protection |
 | Security claims must be evidenced | Audit trail, security event pipeline, risk scoring with human review, documented device limitations |
@@ -22,11 +22,12 @@ Primary forces:
 
 **Selected:** single multi-tenant SaaS control plane, cloud-hosted, hybrid-ready.
 
-All tenants initially share the application fleet and data infrastructure, separated logically.
-The data model and deployment configuration keep the option open for dedicated per-tenant
-deployments (government/enterprise) without rewriting domain code: every tenant-scoped query is
-parameterised by `tenant_id`, and infrastructure is described declaratively (Docker Compose →
-Kubernetes/Terraform later).
+All tenants initially share the application fleet and a single database schema on TiDB Cloud,
+separated logically. The data model and deployment configuration keep the option open for dedicated
+per-tenant deployments (government/enterprise) without rewriting domain code: every tenant-scoped
+query is parameterised by `tenant_id`, and infrastructure is described declaratively (Docker Compose
+→ Kubernetes/Terraform later). The database is hosted, so Compose only runs Redis and optional
+MinIO/MailHog.
 
 ```
 Candidates / Admins / Integrations
@@ -44,11 +45,11 @@ Candidates / Admins / Integrations
      └────────┬─────────┘
        ┌──────┼───────────────┬────────────────┐
        │      │               │                │
-  PostgreSQL  Redis       Object storage     Workers
- (primary,   (sessions,  (S3/MinIO:          (BullMQ: scheduled exams,
-  RLS,        queues,     documents,          reminders, reports, webhooks,
-  partitioned exam state, evidence, exports)  cleanup, backups)
-  replica)    rate limits)
+  TiDB Cloud  Redis       Object storage     Workers
+ (MySQL,     (sessions,  (S3/MinIO:          (BullMQ: scheduled exams,
+  TLS,        queues,     documents,          reminders, reports, webhooks,
+  shared      exam state, evidence, exports)  cleanup, backups)
+  schema)     rate limits)
        │
  Observability: OpenTelemetry → Prometheus/Grafana, Loki, Tempo, Sentry
  Secrets: cloud KMS / HashiCorp Vault (local: env file, never committed)
@@ -67,7 +68,7 @@ is designed so it can be backed by Kafka without changing module code.
 | Module | Responsibility |
 | --- | --- |
 | `Auth` | Login (password/PIN/SSO), MFA, tokens, sessions, password reset, lockout |
-| `Tenancy` | Tenant resolution, RLS context, membership validation |
+| `Tenancy` | Tenant resolution, application-level scoping context, membership validation |
 | `Organisations` | Registration, verification workflow, profile, branding |
 | `Users` / `Rbac` | Users, roles, permissions, invitations, ABAC policy hook |
 | `Examinations` | Exam definitions, versions, scheduling, sections, security policy |
@@ -97,13 +98,22 @@ route and action is independently authorised by the backend.
 1. Every request resolves a tenant from a signed session claim (or platform-controlled subdomain),
    never from an untrusted client parameter.
 2. Membership, account status and permission are validated before handler execution.
-3. The resolved `tenant_id` is applied to the PostgreSQL session as `app.tenant_id` inside a
-   transaction; RLS policies on every tenant table filter reads and constrain writes.
-4. Prisma client extensions inject this context for all tenant-scoped operations.
-5. Super Admin cross-tenant reads use a separate, explicitly elevated context and always emit an
-   audit record. There is no generic "disable RLS" path exposed to feature code.
+3. Tenant scope is applied in application code: `PrismaService` is the intended boundary for
+   tenant-scoped reads and writes. The exact helper implementation is being finalised separately;
+   TiDB Cloud has no PostgreSQL RLS to enforce this at the database level.
+4. Super Admin cross-tenant reads use a separate, explicitly elevated path and always emit an audit
+   record. There is no generic bypass exposed to feature code.
+5. The runtime connection uses a least-privilege app user; the cluster root user is reserved for
+   migrations via `DIRECT_URL` and is never used by the API.
 
-See [ADR-0002](adr/0002-shared-schema-rls.md).
+Data model portability notes: UUID values are `VARCHAR(36)`, and nine former PostgreSQL `String[]`
+columns are nullable `Json` columns. The migration baseline is `20261122000000_init`; legacy
+PostgreSQL RLS SQL is archived under `apps/api/prisma/legacy-postgres/`.
+
+See [ADR-0002 (superseded)](adr/0002-shared-schema-rls.md) and the
+[TiDB Cloud and application-level tenant scoping ADR](adr/0003-tidb-cloud-and-application-tenant-scoping.md).
+Note the security tradeoff: application scoping covers paths that use the scoped data-access
+boundary; raw SQL or another service connecting directly is not automatically tenant-filtered.
 
 ## 5. Examination delivery and reliability
 
@@ -115,7 +125,7 @@ See [ADR-0002](adr/0002-shared-schema-rls.md).
 - Submissions are immutable; corrections are new versions. Results are versioned and approved
   before publication.
 - High-volume tables (`exam_events`, `audit_logs`, `candidate_answers`) are partitioned by time;
-  Redis holds transient attempt state with PostgreSQL as durable fallback.
+  Redis holds transient attempt state with TiDB Cloud as durable fallback.
 - Background workers handle scheduled transitions, reminders and stuck-attempt reconciliation.
 
 See [ADR-0003](adr/0003-server-authoritative-exam-state.md).
@@ -146,7 +156,8 @@ a job that merely started is never reported as a successful backup.
 
 ## 9. Scaling strategy (ordered, not all at once)
 
-1. Vertical + modest horizontal scaling of stateless API/worker fleets; PgBouncer pooling; indexes.
+1. Vertical + modest horizontal scaling of stateless API/worker fleets; managed connection pooling
+   and indexes on TiDB Cloud.
 2. Read replicas and Redis caching for dashboards/reports; partitioned event tables.
 3. Dedicated worker pools and queue backpressure for large exam sessions.
 4. ClickHouse/Kafka for analytics and event firehose when volume justifies it.

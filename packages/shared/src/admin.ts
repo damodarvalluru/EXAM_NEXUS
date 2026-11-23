@@ -24,9 +24,26 @@ export interface PlatformOverview {
   integrations: {
     total: number;
     connected: number;
+    syncActive: number;
     pending: number;
     failed: number;
+    health: Array<{ status: string; count: number }>;
+    lastSyncAt: string | null;
   };
+  candidates: {
+    total: number;
+    active: number;
+  };
+  api: {
+    requests24Hours: number;
+    failures24Hours: number;
+  };
+  security: {
+    openAlerts: number;
+    criticalAlerts: number;
+    openIncidents: number;
+  };
+  examinationsByType: Array<{ type: string; count: number }>;
   authentication: {
     last24Hours: number;
     failedLast24Hours: number;
