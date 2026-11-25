@@ -38,6 +38,11 @@ const NAV_PERMISSIONS: Record<string, readonly string[]> = {
   'tenant-candidates': [PERMISSIONS.ORG_CANDIDATES_READ],
   'tenant-integrations': [PERMISSIONS.ORG_INTEGRATIONS_READ],
   'tenant-api-management': [PERMISSIONS.ORG_API_MANAGE],
+  'advanced-evaluation': [PERMISSIONS.ORG_EVALUATION_READ, PERMISSIONS.ORG_EVALUATION_MANAGE],
+  'results-approval': [PERMISSIONS.ORG_EVALUATION_MANAGE],
+  proctoring: [PERMISSIONS.ORG_PROCTORING_READ],
+  'advanced-reports': [PERMISSIONS.ORG_REPORTS_READ],
+  certificates: [PERMISSIONS.ORG_CERTIFICATES_MANAGE],
 };
 
 function useTheme() {
@@ -130,7 +135,7 @@ export function AppShell() {
             <span className="text-base font-semibold tracking-tight">ExamNexus</span>
           </Link>
           <span className="ml-2 hidden rounded-md border border-line px-2 py-0.5 text-[11px] text-muted sm:inline">
-            Phases 2–6 delivered
+            Phases 2–7 delivered
           </span>
         </div>
         <div className="flex items-center gap-2">

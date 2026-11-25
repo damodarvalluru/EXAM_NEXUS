@@ -30,6 +30,7 @@ import { AuditService } from '../../common/services/audit.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import {
   gradeAnswer,
+  isAutomaticallyGradable,
   seededShuffle,
   snapshotHash,
   type ExaminationSnapshot,
@@ -366,7 +367,13 @@ export class AttemptsService {
         throw new NotFoundException({ code: ERROR_CODES.NOT_FOUND, message: 'Attempt not found' });
       }
       const row = attempt.results[0];
-      if (!row) throw new NotFoundException({ code: ERROR_CODES.NOT_FOUND, message: 'Result is not available yet' });
+      if (!row || row.status !== 'PUBLISHED') {
+        throw new NotFoundException({
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Result is not published yet',
+          details: { status: row?.status ?? 'PENDING' },
+        });
+      }
       return {
         attemptId,
         examinationId: attempt.examinationId,
@@ -532,6 +539,14 @@ export class AttemptsService {
       });
     }
     score = Math.max(0, Math.round(score * 100) / 100);
+    // A result containing subjective answers stays in review until a human
+    // evaluator signs it off (Phase 7). Fully objective attempts can be
+    // published immediately because every mark came from the frozen snapshot.
+    const needsReview = answers.some((answer) => {
+      const frozen = frozenById.get(answer.questionId);
+      return frozen ? !isAutomaticallyGradable(frozen.type) : false;
+    });
+    const publishedAt = needsReview ? null : new Date();
 
     const exam = await tx.examination.findUniqueOrThrow({ where: { id: attempt.examinationId } });
     const submissionId = randomUUID();
@@ -579,9 +594,15 @@ export class AttemptsService {
         maxScore: exam.totalMarks,
         percentage: exam.totalMarks > 0 ? Math.round((score / exam.totalMarks) * 10_000) / 100 : 0,
         passed: exam.passingMarks !== null && score >= exam.passingMarks,
-        status: 'PENDING',
+        status: needsReview ? 'PENDING' : 'PUBLISHED',
         version: 1,
-        metadata: { gradedAt: submittedAt.toISOString(), automatic: true } as Prisma.InputJsonValue,
+        publishedAt,
+        metadata: {
+          gradedAt: submittedAt.toISOString(),
+          automatic: true,
+          needsReview,
+          publishedImmediately: !needsReview,
+        } as Prisma.InputJsonValue,
       },
     });
     return receipt;

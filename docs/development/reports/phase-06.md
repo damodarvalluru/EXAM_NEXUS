@@ -4,6 +4,14 @@
 **Status:** Code complete. Build, lint and unit tests pass. Browser E2E and production alert routing
 were not executed in this environment.
 
+## Final integrated status addendum (2026-11-25)
+
+Production alerting with severity routing, escalation/SLA dispatch and health transitions,
+template-backed notification delivery, billing checkout/cancel/restore with HMAC-verified webhooks,
+and production nonce-based CSP are now implemented and tested. Browser E2E covers the admin analytics
+and security-centre journeys. See
+[`evidence/phase-08/final-verification.md`](../../../evidence/phase-08/final-verification.md).
+
 ## Final integration verification (2026-11-22)
 
 This section supersedes the pending verification statements in the historical record below.

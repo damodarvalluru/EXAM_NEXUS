@@ -168,6 +168,12 @@ platform monitoring, mounted at `/api/v1/platform/integrations/monitoring`.
 | DELETE | `/integrations/:id/scopes/:permission` | `org.integrations.manage` | Revoke one integration scope |
 | POST | `/integrations/:id/test` | `org.integrations.manage` | Perform a real HTTPS connection test |
 | POST | `/integrations/:id/sync` | `org.integrations.manage` | Synchronise candidates; supports `dryRun` and field mapping |
+| POST | `/integrations/:id/token` | `org.integrations.manage` + step-up | Exchange stored credentials for an encrypted access token |
+| POST | `/integrations/:id/oauth/authorize` | `org.integrations.manage` + step-up | Create an authorization-code URL with PKCE `S256`, state and expiry |
+| POST | `/integrations/:id/oauth/callback` | `org.integrations.manage` | Exchange a code using single-use, tenant/user-bound Redis state |
+| POST | `/integrations/:id/verify-mapping` | `org.integrations.manage` | Verify a candidate field mapping against a live sample |
+| POST | `/integrations/:id/import-csv` | `org.integrations.manage` | Import candidate records from CSV |
+| POST | `/integrations/:id/lifecycle` | `org.integrations.manage` + step-up | Apply a guarded lifecycle action (activate/suspend/archive) |
 | POST | `/integrations/:id/webhook` | `org.integrations.manage` | Create a signed webhook endpoint; signing secret is returned once |
 | GET | `/integrations/:id/events` | `org.integrations.read` | Integration/webhook event history |
 | POST | `/integrations/:id/events/:eventId/retry` | `org.integrations.manage` | Retry failed webhook deliveries |
@@ -196,6 +202,12 @@ receiver requires a real webhook endpoint UUID at
 `POST /api/v1/integrations/webhooks/inbound/:endpointId`; an unknown UUID returns 404 and an
 unauthenticated ingest request returns 401.
 
+Authorization-code flows use PKCE `S256`. The authorize endpoint stores a hashed, tenant- and
+user-bound state in Redis with a short TTL and returns the challenge/state fingerprints; the callback
+consumes state with `GETDEL` so it is single-use, exchanges the code through the existing token
+acquisition path, and emits audit events for both success and failure. Failed webhook deliveries are
+retried by a config-gated processor with a Redis leader lock and signed delivery headers.
+
 ## Phase 6 administration (`/api/v1/admin`)
 
 All routes require a platform principal and the listed permission. All metrics are computed from
@@ -209,10 +221,105 @@ database records on every request.
 | GET | `/admin/analytics` | `platform.reports.read` | Cross-tenant analytics for `?range=7d|30d|90d` |
 | GET | `/admin/analytics/export` | `platform.reports.read` | CSV export for `?kind=organisations|attempts|alerts` |
 | GET | `/admin/notifications` | `platform.monitoring.read` | Notification delivery records |
+| POST | `/admin/notifications/drain` | `platform.configuration.manage` + step-up | Opt-in delivery of pending email/SMS/webhook notifications |
 | GET | `/admin/subscriptions` | `platform.organisations.read` | Organisation subscriptions |
+| POST | `/admin/billing/checkout` | `platform.organisations.manage` + step-up | Create a provider-hosted checkout session |
+| POST | `/admin/billing/subscriptions/:id/cancel` | `platform.organisations.manage` + step-up | Cancel a subscription with a reason |
+| POST | `/admin/billing/subscriptions/:id/restore` | `platform.organisations.manage` + step-up | Restore a cancelled subscription |
+| POST | `/admin/billing/webhook` | Public, HMAC-verified | Provider webhook; verifies timestamp/nonce/signature before any mutation |
 | GET/POST/PATCH | `/admin/support/tickets` | `platform.support.manage` | Support ticket queue and updates |
 | GET/PATCH | `/admin/settings` | `platform.configuration.manage` | Platform settings stored in the database |
 | GET | `/admin/live/attempts` | `platform.monitoring.read` | Active examination attempts across tenants |
+
+Platform alert creation routes through severity-based dispatch with HTTPS-signed delivery,
+escalation and SLA-breach auditing; failures transition health state without cancelling escalation
+timers. In production, Helmet CSP uses a per-request nonce exposed to server-rendered templates via
+`res.locals.cspNonce`; development behaviour is unchanged.
+
+## Phase 7 tenant advanced workflows (`/api/v1/advanced`)
+
+All paths below are relative to the global `/api/v1` prefix. Tenant routes require a verified tenant
+context and the listed organisation permission unless noted otherwise.
+
+### Evaluation (`/api/v1/advanced/evaluations`)
+
+| Method | Path | Permission | Purpose |
+| --- | --- | --- | --- |
+| GET | `/advanced/evaluations/queue` | `org.evaluation.read` | Submitted attempts awaiting subjective evaluation |
+| GET | `/advanced/evaluations/:attemptId?blind=true` | `org.evaluation.read` | Blind-capable answer review detail; `blind=true` withholds candidate identity |
+| POST | `/advanced/evaluations/:attemptId/ai-suggestions/:questionId` | `org.evaluation.manage` | Explainable deterministic mark suggestion; suggestion only, never applies marks |
+| GET | `/advanced/evaluations/:attemptId/history` | `org.evaluation.read` | Immutable marks-change history for the attempt |
+| POST | `/advanced/evaluations/:attemptId/assign` | `org.evaluation.manage` | Assign subjective questions to evaluators, optionally blind |
+| POST | `/advanced/evaluations/:attemptId/reopen` | `org.evaluation.manage` | Reopen accepted marks for moderation and re-evaluation |
+| POST | `/advanced/evaluations/:attemptId/review` | `org.evaluation.manage` | Record human decisions; accepted `COMPLETED` marks recompute the result |
+
+### Results approval (`/api/v1/advanced/results`)
+
+| Method | Path | Permission | Purpose |
+| --- | --- | --- | --- |
+| GET | `/advanced/results` | `org.evaluation.read` | Result review list |
+| GET | `/advanced/results/analytics` | `org.evaluation.read` | Published results grouped by department and examination |
+| GET | `/advanced/results/rank/:examinationId` | `org.evaluation.read` | Read-only competition ranks from latest published results |
+| POST | `/advanced/results/rank/:examinationId` | `org.evaluation.manage` | Explicitly persist competition ranks |
+| POST | `/advanced/results/publish-due` | `org.evaluation.manage` | Publish approved scheduled results whose time has arrived |
+| GET | `/advanced/results/:resultId/scorecard` | `org.evaluation.read` | Per-question scorecard from the frozen examination version |
+| GET | `/advanced/results/:resultId` | `org.evaluation.read` | Result review detail |
+| POST | `/advanced/results/:resultId/approve` | `org.evaluation.manage` | Approve a reviewed result, optionally publish it |
+| POST | `/advanced/results/:resultId/publish` | `org.evaluation.manage` | Publish a reviewed result |
+| POST | `/advanced/results/:resultId/schedule` | `org.evaluation.manage` | Schedule an approved result for later publication |
+| POST | `/advanced/results/:resultId/reject` | `org.evaluation.manage` | Send a result back for revision |
+| POST | `/advanced/results/:resultId/withhold` | `org.evaluation.manage` | Withhold a result with an audit record |
+
+Objective-only results auto-publish at submit. Subjective results remain `PENDING` until a completed
+human evaluation exists and a reviewer approves or publishes them. Reopening a published result
+unpublishes it and writes an audit record. The candidate result endpoint
+(`GET /candidate/attempts/:attemptId/result`) returns only `PUBLISHED` results. The rank `GET` is
+read-only; persistence happens only through the explicit protected `POST` route.
+
+### Proctoring (`/api/v1/advanced/proctoring`)
+
+| Method | Path | Auth / permission | Purpose |
+| --- | --- | --- | --- |
+| POST | `/advanced/proctoring/sessions` | Tenant candidate or reviewer | Register a session/device and receive a server-issued 30-minute HMAC token |
+| POST | `/advanced/proctoring/sessions/:attemptId/heartbeat` | Active session holder | Keep an active session alive with the current token |
+| POST | `/advanced/proctoring/sessions/:attemptId/rotate` | Active session holder | Rotate the short-lived session token |
+| POST | `/advanced/proctoring/attempts/:attemptId/events` | Attempt owner or reviewer | Ingest one advisory event; recomputes explainable risk |
+| GET | `/advanced/proctoring/attempts` | `org.proctoring.read` | Attempts with advisory risk |
+| GET | `/advanced/proctoring/attempts/:attemptId` | `org.proctoring.read` | Proctoring detail for one attempt |
+| POST | `/advanced/proctoring/attempts/:attemptId/assess` | `org.proctoring.read` | Recompute the risk assessment |
+| PATCH | `/advanced/proctoring/events/:eventId` | `org.proctoring.read` | Set the investigation flag on an event |
+| POST | `/advanced/proctoring/assessments/:assessmentId/review` | `org.proctoring.read` | Record human review/appeal status |
+
+Browser events are advisory signals for human review only; they never auto-disqualify candidates.
+Session tokens are issued by the server, expire after 30 minutes, and mismatched token evidence is
+persisted without discarding the assessment. Duplicate high-risk alerts are deduplicated. CSV exports
+neutralise formula-injection prefixes.
+
+### Reporting (`/api/v1/advanced/reports`)
+
+| Method | Path | Permission | Purpose |
+| --- | --- | --- | --- |
+| GET | `/advanced/reports/exams?examinationId=&kind=` | `org.reports.read` | Tenant exam analytics from persisted records |
+| GET | `/advanced/reports/export?examinationId=&kind=` | `org.reports.read` | CSV export; `kind=exams\|results\|questions\|risk\|certificates` |
+
+### Certificates (`/api/v1/advanced/certificates`)
+
+| Method | Path | Auth / permission | Purpose |
+| --- | --- | --- | --- |
+| GET | `/advanced/certificates/verify?code=` | Public | Verify by random public code; returns valid/revoked/not-found without tenant-private fields |
+| GET | `/advanced/certificates` | `org.certificates.manage` | List issued certificates |
+| POST | `/advanced/certificates/issue` | `org.certificates.manage` | Issue from a published, passing result |
+| GET | `/advanced/certificates/:id/pdf` | `org.certificates.manage` | Generated certificate PDF |
+| POST | `/advanced/certificates/:id/revoke` | `org.certificates.manage` | Revoke a certificate |
+
+## Phase 8 verification tooling
+
+Executable tooling and runbooks are provided in `tests/load/k6/`, `tests/security/`,
+`.github/workflows/security-verification.yml`, `apps/frontend/e2e/` and `scripts/dr/README.md`.
+Recorded evidence includes k6 load/spike runs, a passive ZAP baseline, corrected Semgrep scans, a
+Trivy scan with zero findings after remediation, DR backup/restore rehearsal, and 11 passing browser
+E2E tests. An independent-review sign-off and authorised penetration test are **not** claimed;
+verification evidence belongs under `evidence/phase-08/`.
 
 ## Platform
 

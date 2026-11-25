@@ -1,0 +1,125 @@
+# Semgrep Community Edition rules for ExamNexus (NestJS + Prisma + React/TS).
+# Run: semgrep scan --config tests/security/semgrep.yml --metrics=off .
+# Rules are intentionally pattern-based: triage findings, do not auto-downgrade.
+# Exclusions are passed on the command line (--exclude) so --novcs can scan untracked files too.
+rules:
+  - id: prisma-raw-sql-unsafe-interpolation
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Prisma $queryRawUnsafe receives a template literal or concatenated string.
+      Build raw queries with $queryRaw`... ${param}` (parameterised) or Prisma's
+      typed query API; never interpolate user input into SQL.
+    metadata:
+      category: security
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+      technology: [prisma, nodejs, tidb]
+    # Regex form avoids ambiguity between a literal `$` in the Prisma method name
+    # and Semgrep metavariable syntax.
+    patterns:
+      - pattern-either:
+          - pattern-regex: '\$queryRawUnsafe\s*\(\s*`[^`]*\$\{'
+          - pattern-regex: '\$queryRawUnsafe\s*\(\s*[^;]*\+'
+
+  - id: hardcoded-secret-literal
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      A variable or property whose name suggests a secret is assigned a string
+      literal. Load secrets from process.env / a secret manager instead.
+    metadata:
+      category: security
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+    patterns:
+      - pattern-either:
+          - pattern: const $NAME = $VALUE;
+          - pattern: let $NAME = $VALUE;
+          - pattern: var $NAME = $VALUE;
+          - pattern: $OBJ.$NAME = $VALUE;
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: '(?i).*(secret|password|passwd|passphrase|api_?key|private_?key|access_?key|token)'
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: '^"[^"]{8,}"$'
+
+  - id: express-jwt-hardcoded-secret
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      JSON Web Token signing/verification uses a literal secret. Use a strong
+      value from configuration (JWT_SECRET) and rotate it through the secret store.
+    metadata:
+      category: security
+      cwe: "CWE-321: Use of Hard-coded Cryptographic Key"
+      technology: [jwt, express, nestjs]
+    patterns:
+      - pattern-either:
+          - pattern: jwt.sign(..., "$SECRET", ...)
+          - pattern: jwt.verify(..., "$SECRET", ...)
+          - pattern: 'JwtModule.register({ secret: "$SECRET" })'
+          - pattern: 'new JwtService({ secret: "$SECRET" })'
+
+  - id: dynamic-code-execution-eval-function
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      eval()/new Function() execute attacker-influenced strings as code. Remove
+      dynamic execution; use explicit parsers/allowlists (JSON.parse, zod, etc.).
+    metadata:
+      category: security
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: new Function(...)
+
+  - id: tls-verification-disabled
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >-
+      TLS certificate verification is disabled. ExamNexus requires TLS with
+      hostname verification for TiDB Cloud and all outbound HTTPS integrations.
+    metadata:
+      category: security
+      cwe: "CWE-295: Improper Certificate Validation"
+    patterns:
+      - pattern-either:
+          - pattern: 'rejectUnauthorized: false'
+          - pattern: 'strictSSL: false'
+          - pattern: NODE_TLS_REJECT_UNAUTHORIZED = "0"
+          - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+
+  - id: secrets-written-to-logs
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      A value whose name suggests a credential is passed to a logger or console.
+      Log only IDs, prefixes or redacted hashes; never log tokens, passwords,
+      cookies or Authorization headers (audit records must stay sanitised too).
+    metadata:
+      category: security
+      cwe: "CWE-532: Insertion of Sensitive Information into Log File"
+    # $LOGGER/$LEVEL must be constrained: an unconstrained method-call pattern also
+    # matches non-logging calls such as crypto.verify(secret, ...), producing noise.
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern: console.$LEVEL(..., $SECRET, ...)
+              - metavariable-regex:
+                  metavariable: $LEVEL
+                  regex: '(?i)^(debug|info|log|warn|warning|error|fatal|trace|verbose|notice)$'
+              - metavariable-regex:
+                  metavariable: $SECRET
+                  regex: '(?i)(password|passwd|passphrase|secret|token|api_?key|authorization|cookie)'
+          - patterns:
+              - pattern: $LOGGER.$LEVEL(..., $SECRET, ...)
+              - metavariable-regex:
+                  metavariable: $LOGGER
+                  regex: '(?i)(logger|logging|console|log$)'
+              - metavariable-regex:
+                  metavariable: $LEVEL
+                  regex: '(?i)^(debug|info|log|warn|warning|error|fatal|trace|verbose|notice)$'
+              - metavariable-regex:
+                  metavariable: $SECRET
+                  regex: '(?i)(password|passwd|passphrase|secret|token|api_?key|authorization|cookie)'

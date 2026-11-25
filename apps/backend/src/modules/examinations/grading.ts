@@ -70,6 +70,11 @@ const AUTO_GRADING_TYPES = new Set<QuestionType>([
   'FILL_BLANK',
 ]);
 
+/** Answers of other types require human or AI-assisted evaluation before publication. */
+export function isAutomaticallyGradable(type: QuestionType): boolean {
+  return AUTO_GRADING_TYPES.has(type);
+}
+
 function asArray(value: unknown): unknown[] {
   if (Array.isArray(value)) return value;
   if (value === undefined || value === null) return [];

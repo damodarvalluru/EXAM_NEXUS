@@ -173,6 +173,52 @@ export class ApiManagementService {
     return { ...this.keyView(row), secret };
   }
 
+  /** Rotate a key in place: the old secret stops working immediately. */
+  async rotateKey(
+    tenantId: string,
+    keyId: string,
+    principal: Principal | null,
+    request: RequestWithContext,
+  ): Promise<CreateApiKeyResult> {
+    const secret = `enx_k_${randomBytes(36).toString('base64url')}`;
+    const prefix = secret.slice(0, 20);
+    const row = await this.prisma.withTenant(tenantId, async (tx) => {
+      const previous = await tx.apiKey.findFirst({ where: { id: keyId, tenantId, revokedAt: null } });
+      if (!previous) throw this.notFound('API key');
+      if (previous.clientId) {
+        const client = await tx.apiClient.findFirst({ where: { id: previous.clientId, tenantId } });
+        if (!client || client.status !== 'ACTIVE' || client.revokedAt) {
+          throw new ForbiddenException('API client is not active');
+        }
+      }
+      const now = new Date();
+      await tx.apiKey.update({ where: { id: previous.id }, data: { revokedAt: now } });
+      return tx.apiKey.create({
+        data: {
+          id: randomUUID(),
+          tenantId,
+          clientId: previous.clientId,
+          prefix,
+          secretHash: this.crypto.sha256(secret),
+          scopes: previous.scopes ?? [],
+          expiresAt: previous.expiresAt,
+          lastUsedAt: null,
+        },
+      });
+    });
+    await this.audit.record({
+      actorUserId: principal?.userId,
+      actorEmail: principal?.email,
+      tenantId,
+      action: 'api.key.rotated',
+      resourceType: 'api_key',
+      resourceId: keyId,
+      newValues: { replacementId: row.id, prefix },
+      request,
+    });
+    return { ...this.keyView(row), secret };
+  }
+
   async revokeKey(
     tenantId: string,
     keyId: string,

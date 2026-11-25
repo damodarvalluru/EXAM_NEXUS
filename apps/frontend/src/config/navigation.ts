@@ -77,6 +77,11 @@ export const TENANT_NAV_ITEMS: NavItem[] = [
   { slug: 'candidate-portal', label: 'My Examinations', phase: 4, icon: GraduationCap, path: '/candidate/exams', tenant: true, candidateOnly: true },
   { slug: 'tenant-integrations', label: 'Application Integrations', phase: 5, icon: Plug, path: '/org/integrations', tenant: true },
   { slug: 'tenant-api-management', label: 'API Management', phase: 5, icon: Key, path: '/org/api-management', tenant: true },
+  { slug: 'advanced-evaluation', label: 'Advanced Evaluation', phase: 7, icon: ClipboardCheck, path: '/org/evaluation/advanced', tenant: true },
+  { slug: 'results-approval', label: 'Result Approval', phase: 7, icon: CheckCircle2, path: '/org/results/approval', tenant: true },
+  { slug: 'proctoring', label: 'Proctoring Review', phase: 7, icon: Shield, path: '/org/proctoring', tenant: true },
+  { slug: 'advanced-reports', label: 'Advanced Reports', phase: 7, icon: BarChart3, path: '/org/reports', tenant: true },
+  { slug: 'certificates', label: 'Certificates', phase: 7, icon: FileText, path: '/org/certificates', tenant: true },
 ];
 
 export function findNavItem(slug: string | undefined): NavItem | undefined {

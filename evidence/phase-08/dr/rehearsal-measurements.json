@@ -1,0 +1,26 @@
+{
+  "target": "local MySQL 8.0 Docker container examnexus-dr-mysql, database examnexus_dr_staging (host 127.0.0.1:3307)",
+  "note": "Declared rehearsal incident time is T_start. No production/live target was used.",
+  "backup": {
+    "generatedAt": "2026-11-24T08:54:31.644Z",
+    "checksum": "5487932f86fec9e06a33ddcd1067a7bdf3e2a15c86e11697b3fa5f29ea91b2a8",
+    "tableCount": 56,
+    "totalRows": 168
+  },
+  "T_start": "2026-11-24T08:55:12.216Z",
+  "T_incident": "2026-11-24T08:55:12.216Z",
+  "T_healthy": "2026-11-24T08:55:15.047Z",
+  "observedRtoSeconds": 3,
+  "observedRpoSeconds": 41,
+  "smokeCheckStatus": "PASS",
+  "smokeCheckSummary": {
+    "total": 6,
+    "pass": 6,
+    "fail": 0
+  },
+  "limits": [
+    "Redis sessions/rate limits/MFA challenges, webhook nonce state and queue contents were not restored.",
+    "No local file objects or integration credentials existed in this backup, so those spot checks are not applicable.",
+    "RPO uses the rehearsal start as a declared hypothetical incident time; it is not a production incident measurement."
+  ]
+}

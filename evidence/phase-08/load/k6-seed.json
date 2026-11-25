@@ -1,0 +1,11 @@
+{
+  "at": "2026-11-24T09:36:09.643Z",
+  "target": "local MySQL 8.0 staging rehearsal on 127.0.0.1:3307 (no production target)",
+  "baseUrl": "http://127.0.0.1:3100",
+  "tenantId": "e8b1e336-ee49-4d6d-a0ae-3e4cb1457653",
+  "examId": "54c837db-00ea-4f65-b743-1437f76dbf3f",
+  "candidateId": "8a506eaf-2c73-49f9-813d-18a1f5563bb4",
+  "candidateEmail": "load-candidate-mwui229v@example.test",
+  "questionId": "b48db91b-30c8-457a-a1e0-2581ae9c9c66",
+  "note": "Passwords are intentionally excluded from this evidence file."
+}

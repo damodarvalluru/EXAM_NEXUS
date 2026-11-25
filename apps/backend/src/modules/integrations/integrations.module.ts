@@ -11,6 +11,8 @@ import {
 } from './integrations.controller';
 import { IntegrationsService } from './integrations.service';
 import { IntegrationWebhooksService } from './webhooks.service';
+import { OAuthFlowService } from './oauth-flow.service';
+import { WebhookRetryProcessor } from './webhook-retry.processor';
 
 /** Phase 5: connector framework, encrypted credentials, webhooks and API gateway. */
 @Module({
@@ -20,6 +22,8 @@ import { IntegrationWebhooksService } from './webhooks.service';
     IntegrationsService,
     IntegrationCredentialsService,
     IntegrationWebhooksService,
+    WebhookRetryProcessor,
+    OAuthFlowService,
     ApiManagementService,
     ApiKeyGuard,
   ],

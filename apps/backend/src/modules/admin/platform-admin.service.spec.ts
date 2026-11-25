@@ -1,7 +1,38 @@
+import type { Principal } from '@examnexus/shared';
+import type { AlertDispatchService } from '../../common/services/alert-dispatch.service';
 import type { AuditService } from '../../common/services/audit.service';
+import type { RequestWithContext } from '../../common/middleware/request-context.middleware';
 import type { PrismaService } from '../../database/prisma.service';
 import type { RedisService } from '../../database/redis.service';
 import { isAttemptPassed, PlatformAdminService } from './platform-admin.service';
+
+interface AlertServiceMock {
+  onSecurityAlertUpdated: jest.Mock;
+  onSecurityIncidentUpdated: jest.Mock;
+  trackHealthTransitions: jest.Mock;
+}
+
+function alertServiceMock(): AlertServiceMock {
+  return {
+    onSecurityAlertUpdated: jest.fn().mockResolvedValue(undefined),
+    onSecurityIncidentUpdated: jest.fn().mockResolvedValue(undefined),
+    trackHealthTransitions: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
+function adminPrincipal(): Principal {
+  return {
+    userId: 'user-1',
+    email: 'admin@example.com',
+    tenantId: 'tenant-1',
+    globalRoles: ['PLATFORM_ADMIN'],
+    tenantRoles: [],
+    permissions: [],
+    sessionId: null,
+    authMethod: null,
+    stepUpVerifiedAt: null,
+  };
+}
 
 describe('isAttemptPassed', () => {
   it.each<[number | null, number | null, boolean]>([
@@ -74,6 +105,7 @@ describe('PlatformAdminService.systemHealth degradation', () => {
     redisAvailable?: boolean;
     transactionFails?: boolean;
     eventsFail?: boolean;
+    alerts?: AlertServiceMock;
   } = {}) {
     const queryRaw = jest.fn();
     if (options.databaseAvailable === false) queryRaw.mockRejectedValue(new Error('database unreachable'));
@@ -101,7 +133,8 @@ describe('PlatformAdminService.systemHealth degradation', () => {
     const prisma = { $queryRaw: queryRaw, withElevated } as unknown as PrismaService;
     const redis = { ping } as unknown as RedisService;
     const audit = { record: jest.fn() } as unknown as AuditService;
-    return { service: new PlatformAdminService(prisma, redis, audit), withElevated };
+    const alerts = options.alerts as unknown as AlertDispatchService | undefined;
+    return { service: new PlatformAdminService(prisma, redis, audit, alerts), withElevated };
   }
 
   it('returns a structured DOWN payload when the database probe fails', async () => {
@@ -168,5 +201,113 @@ describe('PlatformAdminService.systemHealth degradation', () => {
       ]),
     );
     expect(health.storage).toEqual({ objects: 0, bytes: 0 });
+  });
+
+  it('passes the resolved components to health transition tracking', async () => {
+    const alerts = alertServiceMock();
+    const { service } = buildService({ alerts });
+
+    const health = await service.systemHealth();
+
+    expect(alerts.trackHealthTransitions).toHaveBeenCalledTimes(1);
+    expect(alerts.trackHealthTransitions).toHaveBeenCalledWith(health.components);
+  });
+
+  it('does not fail the health response when alert tracking fails', async () => {
+    const alerts = alertServiceMock();
+    alerts.trackHealthTransitions.mockRejectedValue(new Error('dispatch unavailable'));
+    const { service } = buildService({ alerts });
+
+    const health = await service.systemHealth();
+
+    expect(health.api.status).toBe('HEALTHY');
+    expect(alerts.trackHealthTransitions).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PlatformAdminService security status dispatch hooks', () => {
+  function serviceWithTransaction(tx: unknown, alerts: AlertServiceMock): PlatformAdminService {
+    const prisma = {
+      withElevated: jest.fn(async (work: (transaction: unknown) => Promise<unknown>) => work(tx)),
+    } as unknown as PrismaService;
+    const audit = { record: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService;
+    return new PlatformAdminService(prisma, {} as RedisService, audit, alerts as unknown as AlertDispatchService);
+  }
+
+  it('dispatches an alert update with the previous status and actor', async () => {
+    const alerts = alertServiceMock();
+    const updated = {
+      id: 'alert-1',
+      tenantId: 'tenant-1',
+      organisation: { name: 'Org' },
+      severity: 'HIGH',
+      category: 'SUSPICIOUS_LOGIN',
+      title: 'Suspicious login',
+      description: 'New location',
+      source: 'auth',
+      evidenceRef: null,
+      status: 'INVESTIGATING',
+      assignedTo: 'user-2',
+      createdAt: new Date(),
+      resolvedAt: null,
+      _count: { incidents: 0 },
+    };
+    const tx = {
+      securityAlert: {
+        findUnique: jest.fn().mockResolvedValue({ status: 'OPEN', assignedTo: null }),
+        update: jest.fn().mockResolvedValue(updated),
+      },
+    };
+    const service = serviceWithTransaction(tx, alerts);
+    const principal = adminPrincipal();
+    const request = {} as RequestWithContext;
+
+    const result = await service.updateAlert(
+      'alert-1',
+      { status: 'INVESTIGATING', assignee: 'user-2' },
+      principal,
+      request,
+    );
+
+    expect(result.id).toBe('alert-1');
+    expect(alerts.onSecurityAlertUpdated).toHaveBeenCalledWith(updated, 'OPEN', principal, request);
+  });
+
+  it('dispatches an incident update with the previous status and actor', async () => {
+    const alerts = alertServiceMock();
+    const updated = {
+      id: 'incident-1',
+      tenantId: 'tenant-1',
+      organisation: { name: 'Org' },
+      alertId: 'alert-1',
+      severity: 'CRITICAL',
+      classification: 'BREACH',
+      status: 'CONTAINED',
+      assignedTo: 'user-2',
+      notes: 'Isolated affected account',
+      responseActions: ['isolated-account'],
+      resolvedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const tx = {
+      securityIncident: {
+        findUnique: jest.fn().mockResolvedValue({ status: 'OPEN', assignedTo: null, notes: null, responseActions: [] }),
+        update: jest.fn().mockResolvedValue(updated),
+      },
+    };
+    const service = serviceWithTransaction(tx, alerts);
+    const principal = adminPrincipal();
+    const request = {} as RequestWithContext;
+
+    const result = await service.updateIncident(
+      'incident-1',
+      { status: 'CONTAINED', assignee: 'user-2', notes: 'Isolated affected account', responseActions: ['isolated-account'] },
+      principal,
+      request,
+    );
+
+    expect(result.id).toBe('incident-1');
+    expect(alerts.onSecurityIncidentUpdated).toHaveBeenCalledWith(updated, 'OPEN', principal, request);
   });
 });

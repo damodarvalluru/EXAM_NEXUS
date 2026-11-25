@@ -867,6 +867,8 @@ model Evaluation {
   tenantId    String             @db.VarChar(36)
   attemptId   String             @db.VarChar(36)
   attempt     ExaminationAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  /// Subjective question this evaluation scores; null for attempt-level reviews.
+  questionId  String?            @db.VarChar(36)
   evaluatorId String?            @db.VarChar(36)
   evaluator   User?              @relation(fields: [evaluatorId], references: [id], onDelete: SetNull)
   mode        EvaluationMode
@@ -882,6 +884,7 @@ model Evaluation {
   updatedAt   DateTime           @updatedAt
 
   @@index([attemptId, status])
+  @@index([attemptId, questionId, status])
   @@map("evaluations")
 }
 
@@ -926,6 +929,7 @@ model Certificate {
   revokedAt         DateTime?
 
   @@index([tenantId])
+  @@index([tenantId, issuedAt])
   @@map("certificates")
 }
 
@@ -1156,6 +1160,7 @@ model ExaminationSecurityEvent {
 
   @@index([attemptId, serverTime])
   @@index([tenantId, eventType, serverTime])
+  @@index([tenantId, severity, serverTime])
   @@map("examination_security_events")
 }
 
@@ -1174,6 +1179,7 @@ model RiskAssessment {
   createdAt    DateTime           @default(now())
 
   @@index([attemptId, createdAt])
+  @@index([tenantId, createdAt])
   @@map("risk_assessments")
 }
 

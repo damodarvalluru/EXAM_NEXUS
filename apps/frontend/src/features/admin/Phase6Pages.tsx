@@ -201,18 +201,71 @@ export function AdminNotificationsPage() {
   );
 }
 
+interface CheckoutResult {
+  provider: string;
+  sessionId: string | null;
+  checkoutUrl: string;
+  expiresAt: string | null;
+}
+
 export function AdminSubscriptionsPage() {
   const query = useQuery({ queryKey: ['admin', 'subscriptions'], queryFn: ({ signal }) => apiGet<SubscriptionView[]>('/admin/subscriptions', { signal }) });
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const canManage = hasPermission(user?.permissions ?? [], PERMISSIONS.PLATFORM_ORGANISATIONS_MANAGE);
+  const [error, setError] = useState<string | null>(null);
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const refetchSubscriptions = () => void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] });
+
+  const checkout = useMutation({
+    mutationFn: (input: { tenantId: string; plan: string; billingCycle: string }) =>
+      apiPost<CheckoutResult>('/admin/billing/checkout', input),
+    onSuccess: (result) => { setError(null); setCheckoutUrl(result.checkoutUrl); refetchSubscriptions(); },
+    onError: (err) => setError(messageOf(err)),
+  });
+  const cancel = useMutation({
+    mutationFn: (id: string) => apiPost(`/admin/billing/subscriptions/${encodeURIComponent(id)}/cancel`, {}),
+    onSuccess: () => { setError(null); refetchSubscriptions(); },
+    onError: (err) => setError(messageOf(err)),
+  });
+  const restore = useMutation({
+    mutationFn: (id: string) => apiPost(`/admin/billing/subscriptions/${encodeURIComponent(id)}/restore`, {}),
+    onSuccess: () => { setError(null); refetchSubscriptions(); },
+    onError: (err) => setError(messageOf(err)),
+  });
+
   if (query.isError) return <ErrorBanner error={query.error} onRetry={() => void query.refetch()} />;
   return (
     <div className="space-y-6">
-      <PageHeader title="Subscription and billing" subtitle="Organisation subscription records." />
+      <PageHeader title="Subscription and billing" subtitle="Organisation subscription records and provider-hosted checkout." />
+      {error && <p className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger">{error}</p>}
+      {checkoutUrl && (
+        <p className="rounded-lg border border-line bg-surface-2 p-3 text-sm">
+          Checkout session created by the provider.{' '}
+          <a className="text-brand underline" href={checkoutUrl} target="_blank" rel="noopener noreferrer">Open provider checkout</a>
+        </p>
+      )}
       <Card title="Subscriptions">
         {query.isLoading ? <LoadingRows count={5} /> : !query.data?.length ? <EmptyState message="No subscriptions recorded." /> : (
           <div className="space-y-2">
             {query.data.map((item) => (
               <div key={item.id} className="flex flex-wrap items-center justify-between rounded border border-line p-3 text-sm">
-                <span>{item.organisation} · {item.plan}</span><Badge tone={statusTone(item.status)}>{item.status}</Badge>
+                <span>{item.organisation} · {item.plan}</span>
+                <span className="flex flex-wrap items-center gap-2">
+                  <Badge tone={statusTone(item.status)}>{item.status}</Badge>
+                  {canManage && (
+                    <>
+                      <Button variant="secondary" disabled={checkout.isPending} onClick={() => checkout.mutate({ tenantId: item.tenantId, plan: item.plan, billingCycle: item.billingCycle })}>
+                        Checkout
+                      </Button>
+                      {item.status === 'CANCELLED' || item.status === 'EXPIRED' ? (
+                        <Button variant="secondary" disabled={restore.isPending} onClick={() => restore.mutate(item.id)}>Restore</Button>
+                      ) : (
+                        <Button variant="secondary" disabled={cancel.isPending || item.status === 'CANCELLED'} onClick={() => cancel.mutate(item.id)}>Cancel</Button>
+                      )}
+                    </>
+                  )}
+                </span>
               </div>
             ))}
           </div>

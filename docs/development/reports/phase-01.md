@@ -4,6 +4,14 @@
 **Status:** Code and configuration complete. Local infrastructure runtime verification is pending
 because Docker is not installed in the development environment.
 
+## Final integrated status addendum (2026-11-25)
+
+All Phase 1 work that can be executed locally is complete and verified: `pnpm install`, `pnpm lint`,
+`pnpm test`, `pnpm build`, `prisma validate`, browser E2E and a Trivy filesystem/secret scan with zero
+findings after dependency remediation. The historical Docker availability note below is preserved,
+but it no longer represents the final verification state. See
+[`evidence/phase-08/final-verification.md`](../../../evidence/phase-08/final-verification.md).
+
 ## TiDB Cloud migration note (2026-11-22)
 
 The sections below are the historical Phase 1 record as written on 2026-11-21. On 2026-11-22 the

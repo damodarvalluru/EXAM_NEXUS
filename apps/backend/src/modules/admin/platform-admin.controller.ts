@@ -1,11 +1,26 @@
-import { Body, Controller, Get, Param, Post, Patch, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Patch, Query, Req, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PERMISSIONS, type Principal } from '@examnexus/shared';
 import type { Response } from 'express';
 import { CurrentPrincipal } from '../../common/decorators/current-principal.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import { RequireStepUp } from '../../common/decorators/require-step-up.decorator';
 import type { RequestWithContext } from '../../common/middleware/request-context.middleware';
+import { NotificationDispatchService } from '../../common/services/notification-dispatch.service';
+import {
+  WEBHOOK_NONCE_HEADER,
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
+} from '../../common/webhooks/webhook-signature';
+import { BillingService } from './billing.service';
 import { PlatformAdminService } from './platform-admin.service';
+import {
+  CancelSubscriptionDto,
+  CreateCheckoutDto,
+  DrainNotificationsDto,
+  RestoreSubscriptionDto,
+} from './dto/billing.dto';
 import {
   CreateSupportTicketDto,
   PlatformAdminQueryDto,
@@ -18,7 +33,11 @@ import {
 @ApiTags('platform-administration')
 @Controller('admin')
 export class PlatformAdminController {
-  constructor(private readonly platform: PlatformAdminService) {}
+  constructor(
+    private readonly platform: PlatformAdminService,
+    private readonly billing: BillingService,
+    private readonly notificationDispatcher: NotificationDispatchService,
+  ) {}
 
   @Get('security/alerts')
   @RequirePermissions(PERMISSIONS.PLATFORM_SECURITY_READ)
@@ -77,11 +96,66 @@ export class PlatformAdminController {
     return this.platform.notifications(query);
   }
 
+  @Post('notifications/drain')
+  @RequireStepUp()
+  @RequirePermissions(PERMISSIONS.PLATFORM_CONFIGURATION_MANAGE)
+  @ApiOperation({ summary: 'Opt-in delivery of pending email/SMS notifications' })
+  drainNotifications(@Body() dto: DrainNotificationsDto, @Req() request: RequestWithContext) {
+    return this.notificationDispatcher.drainPending(dto.limit ?? 20, request);
+  }
+
   @Get('subscriptions')
   @RequirePermissions(PERMISSIONS.PLATFORM_ORGANISATIONS_READ)
   @ApiOperation({ summary: 'List organisation subscriptions' })
   subscriptions() {
     return this.platform.subscriptions();
+  }
+
+  @Post('billing/checkout')
+  @RequireStepUp()
+  @RequirePermissions(PERMISSIONS.PLATFORM_ORGANISATIONS_MANAGE)
+  @ApiOperation({ summary: 'Create a provider-hosted checkout session (requires step-up authentication)' })
+  createCheckout(@Body() dto: CreateCheckoutDto, @CurrentPrincipal() principal: Principal, @Req() request: RequestWithContext) {
+    return this.billing.createCheckout(dto, principal, request);
+  }
+
+  @Post('billing/subscriptions/:id/cancel')
+  @RequireStepUp()
+  @RequirePermissions(PERMISSIONS.PLATFORM_ORGANISATIONS_MANAGE)
+  @ApiOperation({ summary: 'Cancel a subscription (requires step-up authentication)' })
+  cancelSubscription(
+    @Param('id') id: string,
+    @Body() dto: CancelSubscriptionDto,
+    @CurrentPrincipal() principal: Principal,
+    @Req() request: RequestWithContext,
+  ) {
+    return this.billing.cancelSubscription(id, dto.reason, principal, request);
+  }
+
+  @Post('billing/subscriptions/:id/restore')
+  @RequireStepUp()
+  @RequirePermissions(PERMISSIONS.PLATFORM_ORGANISATIONS_MANAGE)
+  @ApiOperation({ summary: 'Restore a cancelled subscription (requires step-up authentication)' })
+  restoreSubscription(
+    @Param('id') id: string,
+    @Body() dto: RestoreSubscriptionDto,
+    @CurrentPrincipal() principal: Principal,
+    @Req() request: RequestWithContext,
+  ) {
+    return this.billing.restoreSubscription(id, dto.reason, principal, request);
+  }
+
+  @Public()
+  @Post('billing/webhook')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Signed billing provider webhook (HMAC verified before any mutation)' })
+  billingWebhook(@Req() request: RequestWithContext & { rawBody?: Buffer }) {
+    const rawBody = request.rawBody?.toString('utf8') ?? JSON.stringify(request.body ?? {});
+    return this.billing.verifyProviderWebhook(rawBody, {
+      signature: request.header(WEBHOOK_SIGNATURE_HEADER) ?? undefined,
+      timestamp: request.header(WEBHOOK_TIMESTAMP_HEADER) ?? undefined,
+      nonce: request.header(WEBHOOK_NONCE_HEADER) ?? undefined,
+    }, request);
   }
 
   @Get('support/tickets')

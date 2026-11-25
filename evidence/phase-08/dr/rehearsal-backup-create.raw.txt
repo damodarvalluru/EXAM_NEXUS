@@ -1,0 +1,110 @@
+{
+  "message": "Encrypted logical backup created. No restore or rehearsal was performed.",
+  "archive": "C:\\Users\\damod\\AppData\\Local\\Temp\\opencode\\dr-rehearsal-backups\\examnexus-backup-20261124085431-mwuglhpx.enc",
+  "sidecar": "C:\\Users\\damod\\AppData\\Local\\Temp\\opencode\\dr-rehearsal-backups\\examnexus-backup-20261124085431-mwuglhpx.enc.sha256",
+  "checksum": "5487932f86fec9e06a33ddcd1067a7bdf3e2a15c86e11697b3fa5f29ea91b2a8",
+  "manifest": {
+    "format": "examnexus-logical-backup",
+    "version": 1,
+    "algorithm": "aes-256-gcm",
+    "kdf": {
+      "name": "scrypt",
+      "N": 32768,
+      "r": 8,
+      "p": 1,
+      "keylen": 32
+    },
+    "generatedAt": "2026-11-24T08:54:31.644Z",
+    "schema": {
+      "provider": "mysql",
+      "markerSource": "prisma_migrations",
+      "migrations": [
+        {
+          "name": "20261122130000_exam_integrity",
+          "finishedAt": null
+        },
+        {
+          "name": "20261122130000_exam_integrity",
+          "finishedAt": null
+        },
+        {
+          "name": "20261122000000_init",
+          "finishedAt": "2026-11-22T05:43:17.696Z"
+        },
+        {
+          "name": "20261122120000_admin_integration_support",
+          "finishedAt": "2026-11-22T14:24:51.553Z"
+        },
+        {
+          "name": "20261122130000_exam_integrity",
+          "finishedAt": "2026-11-22T15:01:00.599Z"
+        },
+        {
+          "name": "20261123000000_phase7_advanced",
+          "finishedAt": "2026-11-23T06:03:54.113Z"
+        }
+      ]
+    },
+    "tableCount": 56,
+    "totalRows": 168,
+    "tableCounts": {
+      "permissions": 38,
+      "platform_settings": 0,
+      "system_health_events": 0,
+      "notification_templates": 0,
+      "organisations": 1,
+      "users": 8,
+      "organisation_verifications": 0,
+      "user_profiles": 0,
+      "organisation_memberships": 0,
+      "roles": 0,
+      "role_permissions": 0,
+      "user_roles": 0,
+      "user_sessions": 0,
+      "authentication_events": 0,
+      "mfa_methods": 0,
+      "recovery_codes": 0,
+      "super_admin_credentials": 0,
+      "departments": 0,
+      "branches": 0,
+      "examinations": 1,
+      "question_banks": 1,
+      "question_sets": 1,
+      "candidates": 1,
+      "integrations": 0,
+      "api_clients": 0,
+      "webhook_endpoints": 0,
+      "subscriptions": 0,
+      "payments": 0,
+      "file_objects": 0,
+      "device_registrations": 0,
+      "audit_logs": 7,
+      "security_alerts": 0,
+      "security_incidents": 0,
+      "support_tickets": 0,
+      "api_request_logs": 9,
+      "notifications": 0,
+      "examination_versions": 1,
+      "examination_sections": 1,
+      "examination_security_policies": 0,
+      "questions": 40,
+      "question_options": 56,
+      "question_set_items": 1,
+      "candidate_examinations": 1,
+      "examination_attempts": 1,
+      "candidate_answers": 0,
+      "submissions": 0,
+      "evaluations": 0,
+      "results": 0,
+      "certificates": 0,
+      "examination_security_events": 0,
+      "risk_assessments": 0,
+      "exam_sessions": 0,
+      "integration_credentials": 0,
+      "integration_permissions": 0,
+      "webhook_events": 0,
+      "api_keys": 0
+    }
+  },
+  "note": "The archive header (crypto parameters and table counts) is plaintext; all rows are AES-256-GCM encrypted. No passphrase, connection URL or row contents were logged."
+}

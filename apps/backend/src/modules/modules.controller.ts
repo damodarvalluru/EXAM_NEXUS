@@ -11,6 +11,15 @@ const MODULE_STATUS = [
   { module: 'admin', phase: 2, implemented: true },
   { module: 'platform-administration', phase: 6, implemented: true },
   { module: 'realtime', phase: 4, implemented: true },
+  { module: 'ai-evaluation', phase: 7, implemented: true },
+  { module: 'results-approval', phase: 7, implemented: true },
+  { module: 'proctoring', phase: 7, implemented: true },
+  { module: 'advanced-reporting', phase: 7, implemented: true },
+  { module: 'certificates', phase: 7, implemented: true },
+  { module: 'load-testing', phase: 8, implemented: true },
+  { module: 'disaster-recovery-tools', phase: 8, implemented: true },
+  { module: 'penetration-testing', phase: 8, implemented: false },
+  { module: 'independent-review', phase: 8, implemented: false },
 ] as const;
 
 @Public()

@@ -4,6 +4,14 @@
 **Status:** Code complete and verified by build, lint and unit tests. Database/Redis/storage-dependent
 flows were not executed locally because Docker/Postgres/Redis are unavailable in this environment.
 
+## Final integrated status addendum (2026-11-25)
+
+Live tenant-scoping tests, browser E2E organisation journeys, and the S3-compatible storage adapter
+are now implemented and verified. The adapter uses native `fetch` with AWS Signature V4, supports
+AWS S3 and MinIO, and is covered by mocked-fetch and organisation service tests. See
+[`evidence/phase-08/final-verification.md`](../../../evidence/phase-08/final-verification.md). The
+historical availability note below is preserved for context but superseded.
+
 ## TiDB Cloud migration note (2026-11-22)
 
 The sections below are the historical Phase 3 record as written on 2026-11-21. On 2026-11-22 the

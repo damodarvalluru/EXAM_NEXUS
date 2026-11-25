@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { LocalStorageAdapter } from '../../common/storage/local-storage.adapter';
 import { OrganisationsService } from './organisations.service';
 
 const TENANT = 'tenant-1';
@@ -10,6 +11,7 @@ const TENANT = 'tenant-1';
 function buildService(root: string, overrides: Record<string, unknown> = {}) {
   const fileObject = {
     findFirst: jest.fn(async () => ({ mimeType: 'application/pdf' })),
+    create: jest.fn(async (args: unknown) => args),
   };
   const user = {
     findMany: jest.fn(async () => [{ email: 'member@example.invalid', username: 'member' }]),
@@ -20,6 +22,10 @@ function buildService(root: string, overrides: Record<string, unknown> = {}) {
     fileObject,
     user,
     organisationMembership: { findFirst: jest.fn(async () => ({ id: 'membership-1' })) },
+    organisationVerification: {
+      findFirst: jest.fn(async () => ({ id: 'verification-1', documentKeys: [] })),
+      update: jest.fn(async () => ({})),
+    },
   };
   const prisma = {
     withElevated: jest.fn(async (work: (transaction: unknown) => Promise<unknown>) => work(tx)),
@@ -33,6 +39,9 @@ function buildService(root: string, overrides: Record<string, unknown> = {}) {
   const config = { getOrThrow: jest.fn(() => root), get: jest.fn() };
   const rateLimit = { clearUserFailures: jest.fn(async () => undefined) };
   const audit = { record: jest.fn(async () => undefined) };
+  const storage = new LocalStorageAdapter(root);
+  const put = jest.spyOn(storage, 'put');
+  const get = jest.spyOn(storage, 'get');
   const service = new OrganisationsService(
     prisma as never,
     redis as never,
@@ -41,9 +50,10 @@ function buildService(root: string, overrides: Record<string, unknown> = {}) {
     {} as never,
     config as never,
     rateLimit as never,
+    storage,
   );
   Object.assign(service, overrides);
-  return { service, prisma, redis, crypto, config, rateLimit, fileObject, user, tx };
+  return { service, prisma, redis, crypto, config, rateLimit, fileObject, user, tx, storage, put, get };
 }
 
 const request = {} as never;
@@ -140,6 +150,67 @@ describe('OrganisationsService.readDocument legacy keys', () => {
 
     await expect(service.readDocument(TENANT, TENANT, `REGISTRATION/${randomUUID()}`))
       .rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('OrganisationsService storage adapter', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'examnexus-docs-'));
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('passes the flattened legacy filename to the adapter', async () => {
+    const uuid = randomUUID();
+    await mkdir(join(root, TENANT), { recursive: true });
+    await writeFile(join(root, TENANT, `REGISTRATION_${uuid}`), Buffer.from('legacy-document'));
+    const { service, get } = buildService(root);
+
+    await service.readDocument(TENANT, TENANT, `REGISTRATION/${uuid}`);
+
+    expect(get).toHaveBeenCalledWith(TENANT, `REGISTRATION_${uuid}`);
+  });
+
+  it('uploads through the adapter and records local fileObject metadata', async () => {
+    const bytes = Buffer.from('document');
+    const { service, put, fileObject } = buildService(root);
+
+    const result = await service.uploadDocument(TENANT, TENANT, {
+      documentType: 'ID_PROOF',
+      fileName: 'id.pdf',
+      mimeType: 'application/pdf',
+      contentBase64: bytes.toString('base64'),
+    }, principal, request);
+
+    expect(result.documentType).toBe('ID_PROOF');
+    expect(result.objectKey).toMatch(/^ID_PROOF_[0-9a-f-]{36}$/);
+    expect(put).toHaveBeenCalledWith(TENANT, result.objectKey, bytes);
+    expect(fileObject.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        tenantId: TENANT,
+        objectKey: result.objectKey,
+        bucket: 'local',
+        mimeType: 'application/pdf',
+        sizeBytes: BigInt(bytes.byteLength),
+        purpose: 'verification:ID_PROOF',
+        uploadedBy: 'admin-1',
+      }),
+    });
+  });
+
+  it('rejects a traversal tenant before uploading', async () => {
+    const { service, put } = buildService(root);
+
+    await expect(service.uploadDocument('..', '..', {
+      documentType: 'ID_PROOF',
+      fileName: 'id.pdf',
+      contentBase64: Buffer.from('document').toString('base64'),
+    }, principal, request)).rejects.toBeInstanceOf(BadRequestException);
+    expect(put).not.toHaveBeenCalled();
   });
 });
 
@@ -241,6 +312,7 @@ describe('OrganisationsService reactivation', () => {
       {} as never,
       { getOrThrow: jest.fn(), get: jest.fn() } as never,
       rateLimit as never,
+      new LocalStorageAdapter('/unused'),
     );
 
     await service.review(TENANT, { decision: 'REACTIVATE' }, principal, request);

@@ -120,6 +120,22 @@ export const ResultStatus = {
 } as const;
 export type ResultStatus = (typeof ResultStatus)[keyof typeof ResultStatus];
 
+export const EvaluationMode = {
+  AUTOMATIC: 'AUTOMATIC',
+  MANUAL: 'MANUAL',
+  HYBRID: 'HYBRID',
+  RUBRIC: 'RUBRIC',
+} as const;
+export type EvaluationMode = (typeof EvaluationMode)[keyof typeof EvaluationMode];
+
+export const EvaluationStatus = {
+  PENDING: 'PENDING',
+  IN_PROGRESS: 'IN_PROGRESS',
+  COMPLETED: 'COMPLETED',
+  REVISION: 'REVISION',
+} as const;
+export type EvaluationStatus = (typeof EvaluationStatus)[keyof typeof EvaluationStatus];
+
 export const AttemptStatus = {
   NOT_STARTED: 'NOT_STARTED',
   IN_PROGRESS: 'IN_PROGRESS',

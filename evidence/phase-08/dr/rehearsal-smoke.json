@@ -1,0 +1,108 @@
+{
+  "generatedAt": "2026-11-24T08:55:15.026Z",
+  "baseUrl": "http://127.0.0.1:3100",
+  "status": "pass",
+  "summary": {
+    "total": 6,
+    "pass": 6,
+    "fail": 0
+  },
+  "checks": [
+    {
+      "id": "health-live",
+      "name": "Liveness endpoint returns 200",
+      "method": "GET",
+      "path": "/health/live",
+      "status": "PASS",
+      "httpStatus": 200,
+      "detail": {
+        "expected": 200
+      },
+      "checkedAt": "2026-11-24T08:55:14.958Z"
+    },
+    {
+      "id": "modules-phase-7-8",
+      "name": "Modules endpoint lists Phase 7/8 modules",
+      "method": "GET",
+      "path": "/api/v1/modules",
+      "status": "PASS",
+      "httpStatus": 200,
+      "detail": {
+        "arrayPayload": true,
+        "matchedByPhase": [
+          "ai-evaluation",
+          "results-approval",
+          "proctoring",
+          "advanced-reporting",
+          "certificates",
+          "load-testing",
+          "disaster-recovery-tools",
+          "penetration-testing",
+          "independent-review"
+        ],
+        "matchedByName": [
+          "ai-evaluation",
+          "proctoring",
+          "advanced-reporting",
+          "certificates",
+          "load-testing",
+          "disaster-recovery-tools",
+          "penetration-testing",
+          "independent-review"
+        ]
+      },
+      "checkedAt": "2026-11-24T08:55:14.966Z"
+    },
+    {
+      "id": "unauth-api-v1-admin-overview",
+      "name": "Admin overview requires authentication",
+      "method": "GET",
+      "path": "/api/v1/admin/overview",
+      "status": "PASS",
+      "httpStatus": 401,
+      "detail": {
+        "expected": 401,
+        "errorCode": "UNAUTHENTICATED"
+      },
+      "checkedAt": "2026-11-24T08:55:14.973Z"
+    },
+    {
+      "id": "unauth-api-v1-examinations",
+      "name": "Examination list requires authentication",
+      "method": "GET",
+      "path": "/api/v1/examinations",
+      "status": "PASS",
+      "httpStatus": 401,
+      "detail": {
+        "expected": 401,
+        "errorCode": "UNAUTHENTICATED"
+      },
+      "checkedAt": "2026-11-24T08:55:14.977Z"
+    },
+    {
+      "id": "unauth-api-v1-integrations-ingest-candidates",
+      "name": "Candidate ingest requires API credentials",
+      "method": "POST",
+      "path": "/api/v1/integrations/ingest/candidates",
+      "status": "PASS",
+      "httpStatus": 401,
+      "detail": {
+        "expected": 401,
+        "errorCode": "UNAUTHENTICATED"
+      },
+      "checkedAt": "2026-11-24T08:55:15.021Z"
+    },
+    {
+      "id": "docs-reachable",
+      "name": "Swagger UI responds without a server error",
+      "method": "GET",
+      "path": "/docs",
+      "status": "PASS",
+      "httpStatus": 200,
+      "detail": {
+        "expected": "status < 500"
+      },
+      "checkedAt": "2026-11-24T08:55:15.025Z"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+permissions=38	users=8	organisations=1	examinations=1	questions=40	candidateExaminations=1	auditLogs=7	integrationCredentials=0	fileObjects=0

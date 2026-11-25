@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import os from 'node:os';
 import { ERROR_CODES, type AnalyticsReportView, type ComponentHealthView, type LiveAttemptView, type NotificationView, type PlatformSettingView, type ReportPoint, type SecurityAlertView, type SecurityIncidentView, type SubscriptionView, type SupportTicketView, type SystemHealthView } from '@examnexus/shared';
 import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../database/redis.service';
+import { AlertDispatchService } from '../../common/services/alert-dispatch.service';
 import { AuditService } from '../../common/services/audit.service';
 import type { RequestWithContext } from '../../common/middleware/request-context.middleware';
 import type { Principal } from '@examnexus/shared';
@@ -51,6 +52,7 @@ export class PlatformAdminService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly audit: AuditService,
+    @Optional() private readonly alerts?: AlertDispatchService,
   ) {}
 
   async securityAlerts(query: PlatformAdminQueryDto): Promise<{ items: SecurityAlertView[]; total: number; page: number; pageSize: number }> {
@@ -95,9 +97,11 @@ export class PlatformAdminService {
   }
 
   async updateAlert(id: string, dto: UpdateAlertDto, principal: Principal, request: RequestWithContext): Promise<SecurityAlertView> {
+    let previousStatus = 'OPEN';
     const row = await this.prisma.withElevated(async (tx) => {
       const previous = await tx.securityAlert.findUnique({ where: { id }, include: { organisation: { select: { name: true } } } });
       if (!previous) throw this.notFound('Security alert');
+      previousStatus = previous.status;
       const updated = await tx.securityAlert.update({
         where: { id },
         data: {
@@ -119,6 +123,7 @@ export class PlatformAdminService {
       newValues: { status: dto.status },
       request,
     });
+    await this.alerts?.onSecurityAlertUpdated(row, previousStatus, principal, request);
     return {
       id: row.id, tenantId: row.tenantId, organisation: row.organisation?.name ?? null,
       severity: row.severity, category: row.category, title: row.title, description: row.description,
@@ -158,9 +163,11 @@ export class PlatformAdminService {
   }
 
   async updateIncident(id: string, dto: UpdateIncidentDto, principal: Principal, request: RequestWithContext): Promise<SecurityIncidentView> {
+    let previousStatus = 'OPEN';
     const row = await this.prisma.withElevated(async (tx) => {
       const previous = await tx.securityIncident.findUnique({ where: { id } });
       if (!previous) throw this.notFound('Security incident');
+      previousStatus = previous.status;
       return tx.securityIncident.update({
         where: { id },
         data: {
@@ -178,6 +185,7 @@ export class PlatformAdminService {
       action: 'security.incident.updated', resourceType: 'security_incident', resourceId: id,
       newValues: { status: row.status }, request,
     });
+    await this.alerts?.onSecurityIncidentUpdated(row, previousStatus, principal, request);
     return {
       id: row.id, tenantId: row.tenantId, organisation: row.organisation?.name ?? null,
       alertId: row.alertId, severity: row.severity, classification: row.classification,
@@ -285,6 +293,16 @@ export class PlatformAdminService {
       : components.some((item) => item.status === 'DOWN' || item.status === 'DEGRADED')
         ? 'DEGRADED'
         : 'HEALTHY';
+    // Persist and alert only on real transitions. Alerting must never make a
+    // health probe fail, so every dispatch error is contained here.
+    if (this.alerts) {
+      try {
+        await this.alerts.trackHealthTransitions(components);
+      } catch {
+        // Best-effort: health reporting must survive an alerting failure.
+      }
+    }
+
     const memory = process.memoryUsage();
     return {
       generatedAt: generatedAt.toISOString(),

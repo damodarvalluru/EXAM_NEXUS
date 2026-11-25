@@ -4,6 +4,14 @@
 **Status:** Code complete and verified by build, lint and unit tests. Database/Redis-dependent flows
 were not executed locally because Docker/Postgres/Redis are unavailable in this environment.
 
+## Final integrated status addendum (2026-11-25)
+
+Later verification added live TiDB Cloud/Redis coverage, browser E2E login and role-journey tests,
+and the integrated final checks described in
+[`evidence/phase-08/final-verification.md`](../../../evidence/phase-08/final-verification.md). The
+historical availability note below is preserved for context but superseded by that evidence. Real
+third-party outbound calls remain outside local verification.
+
 ## TiDB Cloud migration note (2026-11-22)
 
 The sections below are the historical Phase 2 record as written on 2026-11-21. On 2026-11-22 the

@@ -116,6 +116,7 @@ export function LoginPage() {
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
           <a href="/register" className="text-brand no-underline">Register an organisation</a>
           <a href="/password/forgot" className="text-brand no-underline">Forgot password?</a>
+          <a href="/verify-certificate" className="text-brand no-underline">Verify a certificate</a>
         </div>
       </Card>
     </div>

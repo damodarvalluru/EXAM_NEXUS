@@ -1,0 +1,10 @@
+Prisma schema loaded from prisma\schema.prisma
+Datasource "db": MySQL database "examnexus_dr_staging" at "127.0.0.1:3307"
+
+4 migrations found in prisma/migrations
+
+
+No pending migrations to apply.
+
+[stderr]
+Environment variables loaded from .env

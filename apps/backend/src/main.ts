@@ -7,7 +7,7 @@ import cookieParser from 'cookie-parser';
 import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
-import type { RequestWithContext } from './common/middleware/request-context.middleware';
+import { cspNonceDirective, ensureCspNonce, type RequestWithContext } from './common/middleware/request-context.middleware';
 import { PrismaService } from './database/prisma.service';
 import { ApiRequestLogMiddleware } from './modules/integrations/api-request-log.middleware';
 
@@ -20,11 +20,32 @@ async function bootstrap(): Promise<void> {
     requestLogger.use(req as RequestWithContext, res, next),
   );
 
+  // The nonce must exist before helmet sends CSP headers. RequestContextMiddleware
+  // reuses this value later in the Nest middleware pipeline.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    ensureCspNonce(req as RequestWithContext, res);
+    next();
+  });
+  const production = config.get<string>('app.environment') === 'production';
   app.use(
     helmet({
-      // Swagger UI relies on inline scripts; a nonce-based CSP is added with
-      // the production hardening phase. HSTS/CSP are enforced at the edge too.
-      contentSecurityPolicy: false,
+      // Development keeps the previous behaviour (Swagger inline scripts work).
+      // Production uses a per-request nonce for scripts and styles.
+      contentSecurityPolicy: production
+        ? {
+            useDefaults: true,
+            directives: {
+              defaultSrc: ["'self'"],
+              scriptSrc: ["'self'", cspNonceDirective],
+              styleSrc: ["'self'", cspNonceDirective],
+              imgSrc: ["'self'", 'data:', 'https:'],
+              connectSrc: ["'self'"],
+              objectSrc: ["'none'"],
+              baseUri: ["'self'"],
+              frameAncestors: ["'none'"],
+            },
+          }
+        : false,
       referrerPolicy: { policy: 'no-referrer' },
     }),
   );

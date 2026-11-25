@@ -2,13 +2,13 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import {
@@ -28,6 +28,8 @@ import { RedisService } from '../../database/redis.service';
 import { CryptoService } from '../../common/crypto/crypto.service';
 import { AuditService } from '../../common/services/audit.service';
 import { RateLimitService } from '../../common/services/rate-limit.service';
+import { getStorageAdapter } from '../../common/storage/storage.factory';
+import { STORAGE_ADAPTER, type StorageAdapter } from '../../common/storage/storage.types';
 import { AuthService } from '../auth/auth.service';
 import type { RequestWithContext } from '../../common/middleware/request-context.middleware';
 import type {
@@ -141,20 +143,6 @@ function resolveDocumentKey(objectKey: string): ResolvedDocumentKey {
   return { fileName: objectKey, downloadName: documentFileName(objectKey) };
 }
 
-/** Both components must resolve to a real file below STORAGE_LOCAL_PATH. */
-function resolveStorageFile(root: string, tenantId: string, fileName: string): string {
-  const base = resolve(root);
-  const target = resolve(base, tenantId, fileName);
-  const inside = relative(base, target);
-  if (!inside || inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
-    throw new BadRequestException({
-      code: ERROR_CODES.VALIDATION_ERROR,
-      message: 'Invalid document key',
-    });
-  }
-  return target;
-}
-
 @Injectable()
 export class OrganisationsService {
   constructor(
@@ -167,7 +155,14 @@ export class OrganisationsService {
     // Optional so Redis-less unit tests can construct the service; all
     // failure-counter resets are best-effort.
     @Optional() private readonly rateLimit?: RateLimitService,
+    // Optional for legacy unit-test constructors; DI supplies the configured
+    // local/S3 adapter in the application and health check paths.
+    @Inject(STORAGE_ADAPTER) @Optional() private readonly storageAdapter?: StorageAdapter,
   ) {}
+
+  private get storage(): StorageAdapter {
+    return this.storageAdapter ?? getStorageAdapter(this.config);
+  }
 
   // -------------------------------------------------------------------------
   // Registration and verification
@@ -1000,7 +995,7 @@ export class OrganisationsService {
   }
 
   // -------------------------------------------------------------------------
-  // Verification documents (local disk adapter; replace with S3 in production)
+  // Verification documents (configured storage adapter: local or S3)
   // -------------------------------------------------------------------------
 
   private async storeRegistrationDocuments(tenantId: string, documents: RegisterDocumentDto[]): Promise<void> {
@@ -1010,9 +1005,8 @@ export class OrganisationsService {
         message: 'A maximum of five verification documents may be submitted',
       });
     }
-    const root = this.config.getOrThrow<string>('storage.localPath');
-    const directory = join(root, tenantId);
-    await mkdir(directory, { recursive: true });
+    assertSafeObjectKey(tenantId);
+    const storage = this.storage;
 
     const objectKeys: string[] = [];
     for (const document of documents) {
@@ -1025,14 +1019,14 @@ export class OrganisationsService {
       }
       assertVerificationDocumentType(document.documentType);
       const objectKey = `${document.documentType}_${randomUUID()}`;
-      await writeFile(join(directory, basename(objectKey)), bytes);
+      await storage.put(tenantId, objectKey, bytes);
       objectKeys.push(objectKey);
       await this.prisma.withElevated((tx) =>
         tx.fileObject.create({
           data: {
             tenantId,
             objectKey,
-            bucket: 'local',
+            bucket: storage.bucket ?? 'local',
             mimeType: document.mimeType ?? 'application/octet-stream',
             sizeBytes: BigInt(bytes.byteLength),
             purpose: `verification:${document.documentType}`,
@@ -1065,23 +1059,22 @@ export class OrganisationsService {
     if (tenantId !== organisationId) {
       throw new ForbiddenException({ code: ERROR_CODES.TENANT_ACCESS_DENIED, message: 'Cross-tenant document upload denied' });
     }
+    assertSafeObjectKey(tenantId);
     const bytes = Buffer.from(dto.contentBase64, 'base64');
     if (bytes.byteLength === 0 || bytes.byteLength > 10 * 1024 * 1024) {
       throw new BadRequestException({ code: ERROR_CODES.VALIDATION_ERROR, message: 'Document must be between 1 byte and 10 MB' });
     }
     assertVerificationDocumentType(dto.documentType);
-    const root = this.config.getOrThrow<string>('storage.localPath');
-    const directory = join(root, tenantId);
-    await mkdir(directory, { recursive: true });
+    const storage = this.storage;
     const objectKey = `${dto.documentType}_${randomUUID()}`;
-    await writeFile(join(directory, basename(objectKey)), bytes);
+    await storage.put(tenantId, objectKey, bytes);
 
     await this.prisma.withTenant(tenantId, async (tx) => {
       await tx.fileObject.create({
         data: {
           tenantId,
           objectKey,
-          bucket: 'local',
+          bucket: storage.bucket ?? 'local',
           mimeType: dto.mimeType ?? 'application/octet-stream',
           sizeBytes: BigInt(bytes.byteLength),
           purpose: `verification:${dto.documentType}`,
@@ -1120,13 +1113,13 @@ export class OrganisationsService {
     if (tenantId && tenantId !== organisationId) {
       throw new ForbiddenException({ code: ERROR_CODES.TENANT_ACCESS_DENIED, message: 'Cross-tenant document access denied' });
     }
+    assertSafeObjectKey(organisationId);
     const documentKey = resolveDocumentKey(objectKey);
     const file = await this.prisma.withElevated((tx) =>
       tx.fileObject.findFirst({ where: { tenantId: organisationId, objectKey } }),
     );
     if (!file) throw new NotFoundException({ code: ERROR_CODES.NOT_FOUND, message: 'Document not found' });
-    const root = this.config.getOrThrow<string>('storage.localPath');
-    const bytes = await readFile(resolveStorageFile(root, organisationId, documentKey.fileName));
+    const bytes = await this.storage.get(organisationId, documentKey.fileName);
     return { bytes, mimeType: file.mimeType, fileName: documentKey.downloadName };
   }
 

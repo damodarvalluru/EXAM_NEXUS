@@ -12,6 +12,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { EmptyState, ErrorBanner, LoadingRows, PageHeader, statusTone } from '../../components/ui/DataState';
+import { useCandidateProctoring } from './useCandidateProctoring';
 
 const CHOICE_TYPES = new Set(['SINGLE_CHOICE', 'TRUE_FALSE']);
 const MULTI_TYPES = new Set(['MULTIPLE_CHOICE', 'MATCHING', 'ORDERING']);
@@ -130,6 +131,7 @@ export function CandidatePortalPage() {
     enabled: Boolean(attemptId) && (attempt.data?.status === 'SUBMITTED' || attempt.data?.status === 'AUTO_SUBMITTED' || Boolean(receipt)),
     queryFn: ({ signal }) => apiGet<CandidateResultView>(`/candidate/attempts/${attemptId}/result`, { signal }),
   });
+  useCandidateProctoring(attemptId, attempt.data?.status === 'IN_PROGRESS');
 
   useEffect(() => {
     if (!attempt.data) return;

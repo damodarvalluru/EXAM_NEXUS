@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-11-24T09:38:16.883Z",
+  "setup": {
+    "tenantId": "e8b1e336-ee49-4d6d-a0ae-3e4cb1457653",
+    "examId": "54c837db-00ea-4f65-b743-1437f76dbf3f",
+    "baseUrl": "http://host.docker.internal:3100",
+    "configuredVus": 20,
+    "configuredDuration": "5m",
+    "note": "Setup success is recorded in the run log; k6 isolates setup module state from summary execution."
+  },
+  "requestCount": 3242,
+  "failedRequestRate": 0,
+  "durationP95Ms": 208.19142675,
+  "checkPassRate": 1,
+  "thresholds": {
+    "http_req_failed": [
+      "rate<0.01"
+    ],
+    "http_req_duration": [
+      "p(95)<1500"
+    ],
+    "checks": [
+      "rate>0.99"
+    ]
+  }
+}

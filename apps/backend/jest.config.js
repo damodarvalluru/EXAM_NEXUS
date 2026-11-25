@@ -4,7 +4,9 @@ module.exports = {
   rootDir: '.',
   testRegex: '.*\\.spec\\.ts$',
   transform: {
-    '^.+\\.(t|j)s$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.json' }],
+    // Test sources are TypeScript. Do not run ts-jest over compiled JavaScript imported
+    // from workspace packages; that produces misleading allowJs warnings and adds work.
+    '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.json' }],
   },
   collectCoverageFrom: ['src/**/*.(t|j)s'],
   coverageDirectory: 'coverage',

@@ -5,6 +5,13 @@
 candidate-to-result database flow all pass. Redis/Docker are unavailable in this environment, so
 login/session and browser E2E journeys were not executed.
 
+## Final integrated status addendum (2026-11-25)
+
+Browser E2E now covers login, role destinations and the candidate start/autosave/submit journey, and
+all integrated checks pass. Phase 7 proctoring and manual subjective-evaluation journeys are covered
+in the Phase 7 report. See
+[`evidence/phase-08/final-verification.md`](../../../evidence/phase-08/final-verification.md).
+
 ## Final integration verification (2026-11-22)
 
 This section supersedes the historical availability and test totals below.

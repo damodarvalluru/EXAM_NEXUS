@@ -5,6 +5,14 @@
 Redis-backed replay/retry journeys require external credentials and a managed Redis instance and were
 not executed locally.
 
+## Final integrated status addendum (2026-11-25)
+
+Authorization-code OAuth with PKCE `S256`, single-use Redis state, CSV mapping/import, guarded
+lifecycle actions and signed webhook retry processing are implemented with unit and opt-in live
+integration coverage. Browser E2E integration/admin journeys also pass. Live calls to a real external
+provider remain unexecuted because no credentials are available. See
+[`evidence/phase-08/final-verification.md`](../../../evidence/phase-08/final-verification.md).
+
 ## Final integration verification (2026-11-22)
 
 This section supersedes the pending routing/infrastructure statements in the historical record below.

@@ -13,7 +13,10 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "seed:super-admin": "node dist/scripts/seed-super-admin.js"
+    "seed:super-admin": "node dist/scripts/seed-super-admin.js",
+    "backup:create": "node dist/scripts/backup-create.js",
+    "backup:verify": "node dist/scripts/backup-verify.js",
+    "backup:restore": "node dist/scripts/backup-restore.js"
   },
   "dependencies": {
     "@examnexus/shared": "workspace:*",

@@ -46,6 +46,11 @@ import { CandidatePortalPage } from './features/examinations/CandidatePortalPage
 import { ExaminationManagementPage } from './features/examinations/ExaminationManagementPage';
 import { EvaluationPage, LiveMonitoringPage } from './features/examinations/MonitoringPages';
 import { QuestionBankPage } from './features/examinations/QuestionBankPage';
+import { AdvancedEvaluationPage } from './features/advanced/EvaluationPages';
+import { ResultApprovalPage } from './features/advanced/ResultApprovalPage';
+import { ProctoringPage } from './features/advanced/ProctoringPages';
+import { AdvancedReportsPage } from './features/advanced/ReportsPage';
+import { CertificateVerificationPage, CertificatesPage } from './features/advanced/CertificatePages';
 import { ModulePlaceholderPage } from './features/platform/ModulePlaceholderPage';
 import { NotFoundPage } from './features/platform/NotFoundPage';
 import { PlatformPage } from './features/platform/PlatformPage';
@@ -231,6 +236,63 @@ function RoutesContent() {
             </Protected>
           }
         />
+        <Route
+          path="org/evaluation/advanced"
+          element={
+            <Protected permission={[PERMISSIONS.ORG_EVALUATION_READ, PERMISSIONS.ORG_EVALUATION_MANAGE]}>
+              <AdvancedEvaluationPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="org/evaluation/advanced/:attemptId"
+          element={
+            <Protected permission={[PERMISSIONS.ORG_EVALUATION_READ, PERMISSIONS.ORG_EVALUATION_MANAGE]}>
+              <AdvancedEvaluationPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="org/results/approval"
+          element={
+            <Protected permission={PERMISSIONS.ORG_EVALUATION_MANAGE}>
+              <ResultApprovalPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="org/proctoring"
+          element={
+            <Protected permission={PERMISSIONS.ORG_PROCTORING_READ}>
+              <ProctoringPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="org/proctoring/:attemptId"
+          element={
+            <Protected permission={PERMISSIONS.ORG_PROCTORING_READ}>
+              <ProctoringPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="org/reports"
+          element={
+            <Protected permission={PERMISSIONS.ORG_REPORTS_READ}>
+              <AdvancedReportsPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="org/certificates"
+          element={
+            <Protected permission={PERMISSIONS.ORG_CERTIFICATES_MANAGE}>
+              <CertificatesPage />
+            </Protected>
+          }
+        />
+        <Route path="verify-certificate" element={<CertificateVerificationPage />} />
         <Route
           path="candidate/exams"
           element={

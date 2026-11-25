@@ -14,6 +14,7 @@
     "prebuild": "pnpm --filter @examnexus/shared build",
     "build": "pnpm --filter @examnexus/api build && pnpm --filter @examnexus/web build",
     "test": "pnpm --filter @examnexus/shared test && pnpm --filter @examnexus/api test && pnpm --filter @examnexus/web test",
+    "test:e2e": "pnpm --filter @examnexus/web test:e2e",
     "lint": "pnpm --filter @examnexus/api lint && pnpm --filter @examnexus/web lint",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,yml,yaml}\"",
     "prisma:generate": "pnpm --filter @examnexus/api prisma:generate",

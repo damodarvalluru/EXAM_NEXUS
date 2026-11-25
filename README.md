@@ -4,25 +4,24 @@ ExamNexus is a multi-tenant, enterprise-grade examination hosting and management
 It is being built as a **cloud SaaS foundation with hybrid-ready architecture**, starting as a
 modular monolith and scaling out only where measurements justify it.
 
-> **Build status (verified 2026-11-22):** Phases 1–6 are code-complete and locally verified.
-> `pnpm lint`, `pnpm test` (API: 14 suites passed / 2 skipped, 93 tests passed / 10 skipped; web:
-> 2 tests passed), `pnpm build` and `pnpm --filter @examnexus/api exec prisma validate` pass; the
-> opt-in live database suite with Redis running passed **16 suites / 103 tests**
-> (`RUN_DB_TESTS=1 pnpm --filter @examnexus/api test -- --runInBand`). Migrations
-> `20261122000000_init`, `20261122120000_admin_integration_support` and
-> `20261122130000_exam_integrity` are applied (`prisma migrate status` → "Database schema is up to
-> date!"); Redis runs locally via Docker Compose (`docker exec examnexus-redis redis-cli ping` →
-> `PONG`) and the API boots with `/health/ready` reporting database, redis and storage up.
-> Redis reactivation failure-counter clearing and legacy verification-document key compatibility are
-> now implemented and verified. The platform includes the foundation, Super Admin auth/RBAC,
-> organisation onboarding, the full examination engine with a candidate portal, the tenant
-> integration/API gateway and the complete Super Admin administration suite. **This is local
-> verification, not production-deployment readiness.** Real third-party outbound calls (no
-> credentials), browser E2E automation, production
-> alerting/escalation/on-call/SLA policies and paid-billing provider mutations/invoices remain
-> unverified; Phases 7–8 are pending. See
-> [`docs/development/roadmap.md`](docs/development/roadmap.md) and the
-> [Phase 5](docs/development/reports/phase-05.md) and [Phase 6](docs/development/reports/phase-06.md) reports.
+> **Build status (verified 2026-11-25):** All internally executable work across Phases 1–8 is
+> complete and verified. `pnpm install`, `pnpm lint`, `pnpm test`, `pnpm build`,
+> `pnpm --filter @examnexus/api exec prisma validate` and `pnpm test:e2e` pass. API unit tests:
+> **28 suites passed / 4 skipped**, **216 tests passed / 12 skipped**; web unit tests: **2 passed**;
+> browser E2E: **11 passed**. Trivy v0.76.2 completed with **0 vulnerabilities and 0 secrets** after
+> all dependency findings were remediated. The earlier live TiDB Cloud suite passed **19 suites /
+> 114 tests**, running-API smoke checks passed **6/6**, a passive ZAP baseline recorded 0 FAIL / 1
+> informational warning, corrected Semgrep scans recorded 0 findings, k6 load/spike thresholds
+> passed, and an encrypted DR backup/verify/restore rehearsal recorded RPO/RTO. Migrations
+> `20261122000000_init`, `20261122120000_admin_integration_support`,
+> `20261122130000_exam_integrity` and `20261123000000_phase7_advanced` are applied (`prisma migrate
+> status` → "Database schema is up to date!"). **This is local verification, not production
+> deployment readiness.** Real third-party outbound calls, independent security review sign-off and
+> an authorised penetration test remain external dependencies and are not claimed as complete. See
+> the [roadmap](docs/development/roadmap.md),
+> [final verification](evidence/phase-08/final-verification.md),
+> [Phase 7](docs/development/reports/phase-07.md) and
+> [Phase 8](docs/development/reports/phase-08.md) reports.
 
 ## Prerequisites
 
@@ -48,16 +47,20 @@ modular monolith and scaling out only where measurements justify it.
 
 ```
 apps/
-  api/                 NestJS API (modular monolith, REST v1 + WebSocket)
-  web/                 React SPA (Vite, TanStack Query, Tailwind)
+  backend/             NestJS API (modular monolith, REST v1 + WebSocket; package @examnexus/api)
+  frontend/            React SPA (Vite, TanStack Query, Tailwind; package @examnexus/web)
 packages/
   shared/              Shared TypeScript types, enums and API contracts
 docs/
   architecture/        System design and architecture decision records
-  development/         Roadmap and setup guides
-  security/            Threat model and security notes
+  development/         Roadmap, setup guides and phase reports
+  security/            Threat model, security notes and review templates
   api/                 API documentation
-prisma/                (under apps/api) schema and migrations
+tests/
+  load/k6/             Candidate-flow load/spike scripts (staging only)
+  security/            ZAP/Semgrep config and API smoke checks
+scripts/dr/            Encrypted backup/verify/restore runbook
+apps/backend/prisma/    Schema and migrations
 ```
 
 ## Quick start
@@ -69,7 +72,7 @@ See [`docs/development/getting-started.md`](docs/development/getting-started.md)
 pnpm install
 Copy-Item .env.example .env
 # Fill in the TIDB_* values from your cluster: app user in DATABASE_URL, root user in DIRECT_URL.
-Copy-Item .env apps\api\.env -Force
+Copy-Item .env apps\backend\.env -Force
 docker compose up -d
 pnpm --filter @examnexus/api prisma:generate
 pnpm --filter @examnexus/api exec prisma migrate deploy
@@ -81,6 +84,21 @@ root user in `DATABASE_URL`. `prisma migrate dev` cannot create a shadow databas
 the supported workflow is `prisma migrate diff` to generate SQL and `prisma migrate deploy` to apply
 it. Docker is only needed for Redis (MinIO/MailHog are optional); if Docker is unavailable, point
 `REDIS_URL` and object-storage variables at managed services.
+
+## Verification tooling
+
+- Browser E2E: `pnpm test:e2e` — 11 Chromium journeys covering auth, organisation, candidate,
+  Phase 7 and admin flows.
+- Load/spike: [`tests/load/k6/README.md`](tests/load/k6/README.md) — staging only; recorded local
+  results are under `evidence/phase-08/load/`.
+- Security scans and API smoke checks: [`tests/security/README.md`](tests/security/README.md); Trivy
+  triage is in [`evidence/phase-08/trivy-triage.md`](evidence/phase-08/trivy-triage.md).
+- Disaster recovery CLI/runbook: [`scripts/dr/README.md`](scripts/dr/README.md) — backup, verify and
+  restore rehearsal evidence is under `evidence/phase-08/dr/`.
+- Penetration test plan and independent review template: [`docs/security/`](docs/security/) — both
+  remain unsigned pending an independent reviewer and authorised test window.
+
+Evidence from executed verification is under `evidence/phase-08/`.
 
 ## Phase deliverables
 

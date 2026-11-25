@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { PERMISSIONS, type Principal } from '@examnexus/shared';
+import { INTEGRATION_CONNECTORS, PERMISSIONS, type IntegrationConnector, type Principal } from '@examnexus/shared';
 import { CurrentPrincipal } from '../../common/decorators/current-principal.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
@@ -11,12 +11,17 @@ import { ApiKeyGuard, RequireApiScopes } from './api-key.guard';
 import { ApiManagementService } from './api-management.service';
 import { IntegrationCredentialsService } from './credentials.service';
 import {
+  AcquireTokenDto,
   CreateApiClientDto,
+  CreateOAuthAuthorizeDto,
   CreateApiKeyDto,
   CreateIntegrationDto,
   CreateWebhookDto,
   GrantScopesDto,
+  ImportCsvDto,
   IngestCandidatesDto,
+  LifecycleDto,
+  OAuthCallbackDto,
   RetryWebhookDto,
   RotateCredentialDto,
   StoreCredentialDto,
@@ -24,8 +29,10 @@ import {
   TestConnectionDto,
   UpdateIntegrationDto,
   UpdateStatusDto,
+  VerifyMappingDto,
 } from './dto/integration.dto';
 import { IntegrationsService } from './integrations.service';
+import { OAuthFlowService } from './oauth-flow.service';
 import { IntegrationWebhooksService } from './webhooks.service';
 
 @ApiTags('integrations')
@@ -37,6 +44,7 @@ export class IntegrationsController {
     private readonly credentials: IntegrationCredentialsService,
     private readonly webhooks: IntegrationWebhooksService,
     private readonly api: ApiManagementService,
+    private readonly oauthFlow: OAuthFlowService,
   ) {}
 
   @Get()
@@ -51,6 +59,13 @@ export class IntegrationsController {
   @ApiOperation({ summary: 'Create a tenant integration' })
   create(@Body() dto: CreateIntegrationDto, @CurrentPrincipal() principal: Principal, @Req() request: RequestWithContext) {
     return this.integrations.create(request.tenantId!, dto, principal, request);
+  }
+
+  @Get('connectors')
+  @RequirePermissions(PERMISSIONS.ORG_INTEGRATIONS_READ)
+  @ApiOperation({ summary: 'List curated external application connectors' })
+  connectors(): IntegrationConnector[] {
+    return [...INTEGRATION_CONNECTORS];
   }
 
   @Get(':id')
@@ -135,6 +150,51 @@ export class IntegrationsController {
     return this.integrations.sync(request.tenantId!, id, dto, principal, request);
   }
 
+  @Post(':id/token')
+  @RequirePermissions(PERMISSIONS.ORG_INTEGRATIONS_MANAGE)
+  @RequireStepUp()
+  @ApiOperation({ summary: 'Exchange OAuth2/OIDC credentials for a stored encrypted access token' })
+  acquireToken(@Param('id') id: string, @Body() dto: AcquireTokenDto, @CurrentPrincipal() principal: Principal, @Req() request: RequestWithContext) {
+    return this.integrations.acquireToken(request.tenantId!, id, dto, principal, request);
+  }
+
+  @Post(':id/oauth/authorize')
+  @RequirePermissions(PERMISSIONS.ORG_INTEGRATIONS_MANAGE)
+  @RequireStepUp()
+  @ApiOperation({ summary: 'Create an OAuth2/OIDC authorization-code URL with PKCE S256 and state' })
+  createAuthorizationUrl(@Param('id') id: string, @Body() dto: CreateOAuthAuthorizeDto, @CurrentPrincipal() principal: Principal, @Req() request: RequestWithContext) {
+    return this.oauthFlow.createAuthorizeUrl(request.tenantId!, id, dto, principal, request);
+  }
+
+  @Post(':id/oauth/callback')
+  @RequirePermissions(PERMISSIONS.ORG_INTEGRATIONS_MANAGE)
+  @ApiOperation({ summary: 'Exchange an authorization code using single-use, tenant-bound state' })
+  completeAuthorization(@Param('id') id: string, @Body() dto: OAuthCallbackDto, @CurrentPrincipal() principal: Principal, @Req() request: RequestWithContext) {
+    return this.oauthFlow.handleCallback(request.tenantId!, id, dto, principal, request);
+  }
+
+  @Post(':id/verify-mapping')
+  @RequirePermissions(PERMISSIONS.ORG_INTEGRATIONS_MANAGE)
+  @ApiOperation({ summary: 'Verify field mappings against a live sample' })
+  verifyMapping(@Param('id') id: string, @Body() dto: VerifyMappingDto, @CurrentPrincipal() principal: Principal, @Req() request: RequestWithContext) {
+    return this.integrations.verifyMapping(request.tenantId!, id, dto, principal, request);
+  }
+
+  @Post(':id/import-csv')
+  @RequirePermissions(PERMISSIONS.ORG_INTEGRATIONS_MANAGE)
+  @ApiOperation({ summary: 'Import candidate records from CSV' })
+  importCsv(@Param('id') id: string, @Body() dto: ImportCsvDto, @CurrentPrincipal() principal: Principal, @Req() request: RequestWithContext) {
+    return this.integrations.importCsv(request.tenantId!, id, dto, principal, request);
+  }
+
+  @Post(':id/lifecycle')
+  @RequirePermissions(PERMISSIONS.ORG_INTEGRATIONS_MANAGE)
+  @RequireStepUp()
+  @ApiOperation({ summary: 'Apply a guarded integration lifecycle action (requires step-up authentication)' })
+  lifecycle(@Param('id') id: string, @Body() dto: LifecycleDto, @CurrentPrincipal() principal: Principal, @Req() request: RequestWithContext) {
+    return this.integrations.lifecycle(request.tenantId!, id, dto, principal, request);
+  }
+
   @Post(':id/webhook')
   @RequirePermissions(PERMISSIONS.ORG_INTEGRATIONS_MANAGE)
   @ApiOperation({ summary: 'Create a signed webhook endpoint for an integration' })
@@ -205,6 +265,14 @@ export class IntegrationsController {
   @ApiOperation({ summary: 'Create an API key (returned once)' })
   createKey(@Param('clientId') clientId: string, @Body() dto: CreateApiKeyDto, @CurrentPrincipal() principal: Principal, @Req() request: RequestWithContext) {
     return this.api.createKey(request.tenantId!, clientId, dto, principal, request);
+  }
+
+  @Post('api/keys/:keyId/rotate')
+  @RequirePermissions(PERMISSIONS.ORG_API_MANAGE)
+  @RequireStepUp()
+  @ApiOperation({ summary: 'Rotate an API key in place (requires step-up authentication)' })
+  rotateKey(@Param('keyId') keyId: string, @CurrentPrincipal() principal: Principal, @Req() request: RequestWithContext) {
+    return this.api.rotateKey(request.tenantId!, keyId, principal, request);
   }
 
   @Post('api/keys/:keyId/revoke')

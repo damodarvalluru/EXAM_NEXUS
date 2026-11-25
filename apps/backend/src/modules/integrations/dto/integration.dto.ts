@@ -240,3 +240,140 @@ export class RetryWebhookDto {
   @Max(10)
   limit?: number;
 }
+
+export class AcquireTokenDto {
+  @IsIn(['CLIENT_CREDENTIALS', 'AUTHORIZATION_CODE'])
+  grantType!: 'CLIENT_CREDENTIALS' | 'AUTHORIZATION_CODE';
+
+  @IsOptional()
+  @IsUrl({ protocols: ['https'], require_tld: false })
+  tokenUrl?: string;
+
+  /** OIDC issuer; when supplied the token endpoint is discovered over HTTPS. */
+  @IsOptional()
+  @IsUrl({ protocols: ['https'], require_tld: false })
+  issuer?: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  clientId!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(4096)
+  clientSecret!: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  scopes?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4096)
+  code?: string;
+
+  @IsOptional()
+  @IsUrl({ protocols: ['https'], require_tld: false })
+  redirectUri?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  codeVerifier?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  keyId?: string;
+}
+
+/** Starts the browser-based authorization-code (PKCE) flow for an integration. */
+export class CreateOAuthAuthorizeDto {
+  @IsOptional()
+  @IsUrl({ protocols: ['https'], require_tld: false })
+  authorizeUrl?: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  clientId!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(4096)
+  clientSecret!: string;
+
+  /** Browser redirect target. HTTPS is required except for local development loopback. */
+  @IsUrl({ protocols: ['https', 'http'], require_tld: false })
+  redirectUri!: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  scopes?: string[];
+}
+
+/** Callback values read from the provider redirect and posted by the authenticated UI. */
+export class OAuthCallbackDto {
+  @IsString()
+  @MinLength(10)
+  @MaxLength(256)
+  state!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4096)
+  code?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  error?: string;
+}
+
+export class VerifyMappingDto {
+  @IsOptional()
+  @IsUrl({ protocols: ['https'], require_tld: false })
+  url?: string;
+
+  @IsOptional()
+  @IsObject()
+  mapping?: Record<string, string>;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  sampleLimit?: number;
+}
+
+export class ImportCsvDto {
+  @IsString()
+  @MaxLength(2_000_000)
+  csv!: string;
+
+  @IsOptional()
+  @IsObject()
+  mapping?: Record<string, string>;
+
+  @IsOptional()
+  @IsBoolean()
+  dryRun?: boolean;
+
+  @IsOptional()
+  @IsIn([',', ';', '\t'])
+  delimiter?: ',' | ';' | '\t';
+}
+
+export class LifecycleDto {
+  @IsIn(['activate', 'pause', 'revoke', 'reset'])
+  action!: 'activate' | 'pause' | 'revoke' | 'reset';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  reason?: string;
+}

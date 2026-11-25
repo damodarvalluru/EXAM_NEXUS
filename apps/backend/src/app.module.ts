@@ -20,6 +20,7 @@ import { ExaminationsModule } from './modules/examinations/examinations.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
+import { AdvancedModule } from './modules/advanced/advanced.module';
 import { ModulesController } from './modules/modules.controller';
 
 @Module({
@@ -39,6 +40,7 @@ import { ModulesController } from './modules/modules.controller';
     IntegrationsModule,
     AdminModule,
     RealtimeModule,
+    AdvancedModule,
   ],
   controllers: [AppController, ModulesController],
   providers: [

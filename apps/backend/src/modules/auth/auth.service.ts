@@ -599,7 +599,7 @@ export class AuthService {
         },
       });
       if (user.lastLoginIp && user.lastLoginIp !== request.ip) {
-        await tx.securityAlert.create({
+        const alert = await tx.securityAlert.create({
           data: {
             tenantId: user.tenantId,
             severity: 'LOW',
@@ -609,6 +609,10 @@ export class AuthService {
             source: 'auth-service',
           },
         });
+        // Best-effort alerting. Dynamic import keeps this the only edit to the
+        // auth service; the process-local hook is registered by AdminModule.
+        const { dispatchSecurityAlertCreated } = await import('../../common/services/alert-dispatch.service');
+        await dispatchSecurityAlertCreated(alert, request);
       }
     });
     await this.authEvents.record({

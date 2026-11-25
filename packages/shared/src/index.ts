@@ -8,3 +8,5 @@ export * from './admin';
 export * from './examinations';
 export * from './integrations';
 export * from './platform';
+export * from './phase7';
+export * from './phase8';
